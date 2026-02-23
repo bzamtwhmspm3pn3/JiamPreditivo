@@ -1,7 +1,25 @@
-// backend/routes/modelos.js (NOVO ARQUIVO)
+// backend/routes/modelos.js - VERSÃO BLINDADA
 const express = require('express');
 const router = express.Router();
-const { v4: uuidv4 } = require('uuid');
+
+// === SOLUÇÃO BLINDADA PARA UUID (FUNCIONA COM QUALQUER VERSÃO) ===
+let uuidv4;
+try {
+  // Tenta importar como CommonJS (versões antigas)
+  ({ v4: uuidv4 } = require('uuid'));
+} catch (e) {
+  console.log('⚠️ uuid CommonJS falhou, usando fallback...');
+  // Se falhar, cria uma função fallback simples (NÃO USAR EM PRODUÇÃO REAL)
+  uuidv4 = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+  console.log('✅ Fallback de UUID ativado');
+}
+
 const Modelo = require('../models/modelo'); // Vamos criar este modelo
 
 // ============ SALVAR MODELO ============
@@ -20,7 +38,7 @@ router.post('/salvar', async (req, res) => {
     const performance = calcularPerformance(modelo);
     
     const modeloData = {
-      id: modelo.id || uuidv4(),
+      id: modelo.id || uuidv4(), // ✅ Agora funciona sempre
       userId,
       nome: modelo.nome || 'Modelo sem nome',
       tipo: modelo.tipo || 'desconhecido',
