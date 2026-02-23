@@ -113,12 +113,14 @@ app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
+
 // ============ ROTAS R/JS ============
 app.use("/api/r/processamento", processamentoRoutes);
 app.use("/api/r/visualizacao", visualizacaoRoutes);
 app.use("/api/r/interpretacao", interpretacaoRoutes);
 app.use("/api/r/modelos", modelosRRoutes);  // 🔥 USANDO modelosRRoutes
 app.use("/api/r/dados", dadosRoutes);
+app.use('/api/proxy', proxyRoutes);
 
 // ============ ROTAS DE MODELOS (API PRINCIPAL) ============
 app.use('/api/modelos', modelosRoutes);      // 🔥 USANDO modelosRoutes
