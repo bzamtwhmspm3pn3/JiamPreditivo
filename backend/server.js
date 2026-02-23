@@ -18,6 +18,7 @@ const dashboardRoutes = require("./routes/dashboard");
 // 🔥 ROTAS DE MODELOS - UMA PARA API PRINCIPAL, OUTRA PARA R/JS
 const modelosRoutes = require('./routes/modelos');               // API principal
 const modelosRRoutes = require("./routes/r-api/modelos");       // R/JS (renomeada)
+const proxyRoutes = require('./routes/proxy');
 
 // Importar NOVAS rotas R/JS
 const processamentoRoutes = require("./routes/r-api/processamento");
