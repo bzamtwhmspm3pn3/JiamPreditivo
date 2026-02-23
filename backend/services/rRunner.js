@@ -1,8 +1,25 @@
-// backend/services/rRunner.js (VERSÃO COMPLETA COM ATUARIAIS E BITDATA)
+// backend/services/rRunner.js (VERSÃO BLINDADA - SEM ERRO DE UUID)
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+
+// === SOLUÇÃO BLINDADA PARA UUID ===
+let uuidv4;
+try {
+  // Tenta importar como CommonJS
+  ({ v4: uuidv4 } = require('uuid'));
+} catch (e) {
+  console.log('⚠️ uuid CommonJS falhou no rRunner, usando fallback...');
+  // Fallback simples (apenas para gerar IDs únicos)
+  uuidv4 = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+  console.log('✅ Fallback de UUID ativado no rRunner');
+}
 
 class RRunner {
   constructor() {
@@ -79,107 +96,107 @@ class RRunner {
       },
 
      // ================================================================
-// DATA MINING
-// ================================================================
-'clustering': (parametros) => {
-  const errors = [];
-  const algoritmos = ['kmeans', 'dbscan', 'hierarchical', 'gmm'];
-  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
-    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
-  }
-  if (parametros.n_clusters && parametros.n_clusters < 2) {
-    errors.push('Número de clusters deve ser pelo menos 2');
-  }
-  return errors;
-},
+    // DATA MINING
+    // ================================================================
+    'clustering': (parametros) => {
+      const errors = [];
+      const algoritmos = ['kmeans', 'dbscan', 'hierarchical', 'gmm'];
+      if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+        errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+      }
+      if (parametros.n_clusters && parametros.n_clusters < 2) {
+        errors.push('Número de clusters deve ser pelo menos 2');
+      }
+      return errors;
+    },
 
-'associacao': (parametros) => {
-  const errors = [];
-  const algoritmos = ['apriori', 'fp_growth', 'eclat'];
-  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
-    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
-  }
-  if (parametros.suporte_min && (parametros.suporte_min < 0 || parametros.suporte_min > 1)) {
-    errors.push('Suporte mínimo deve estar entre 0 e 1');
-  }
-  if (parametros.confianca_min && (parametros.confianca_min < 0 || parametros.confianca_min > 1)) {
-    errors.push('Confiança mínima deve estar entre 0 e 1');
-  }
-  return errors;
-},
+    'associacao': (parametros) => {
+      const errors = [];
+      const algoritmos = ['apriori', 'fp_growth', 'eclat'];
+      if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+        errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+      }
+      if (parametros.suporte_min && (parametros.suporte_min < 0 || parametros.suporte_min > 1)) {
+        errors.push('Suporte mínimo deve estar entre 0 e 1');
+      }
+      if (parametros.confianca_min && (parametros.confianca_min < 0 || parametros.confianca_min > 1)) {
+        errors.push('Confiança mínima deve estar entre 0 e 1');
+      }
+      return errors;
+    },
 
-'classificacao': (parametros) => {
-  const errors = [];
-  const algoritmos = ['decision_tree', 'random_forest', 'svm', 'naive_bayes', 'knn'];
-  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
-    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
-  }
-  if (!parametros.target) {
-    errors.push('Variável alvo (target) é obrigatória');
-  }
-  return errors;
-},
+    'classificacao': (parametros) => {
+      const errors = [];
+      const algoritmos = ['decision_tree', 'random_forest', 'svm', 'naive_bayes', 'knn'];
+      if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+        errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+      }
+      if (!parametros.target) {
+        errors.push('Variável alvo (target) é obrigatória');
+      }
+      return errors;
+    },
 
-'reducao': (parametros) => {
-  const errors = [];
-  const algoritmos = ['pca', 'tsne', 'umap', 'mds'];
-  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
-    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
-  }
-  if (parametros.n_componentes && parametros.n_componentes < 1) {
-    errors.push('Número de componentes deve ser pelo menos 1');
-  }
-  return errors;
-},
+    'reducao': (parametros) => {
+      const errors = [];
+      const algoritmos = ['pca', 'tsne', 'umap', 'mds'];
+      if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+        errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+      }
+      if (parametros.n_componentes && parametros.n_componentes < 1) {
+        errors.push('Número de componentes deve ser pelo menos 1');
+      }
+      return errors;
+    },
 
-'anomalias': (parametros) => {
-  const errors = [];
-  const algoritmos = ['isolation_forest', 'lof', 'one_class_svm', 'dbscan_outlier'];
-  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
-    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
-  }
-  if (parametros.contamination && (parametros.contamination < 0 || parametros.contamination > 0.5)) {
-    errors.push('Contamination deve estar entre 0 e 0.5');
-  }
-  return errors;
-},
+    'anomalias': (parametros) => {
+      const errors = [];
+      const algoritmos = ['isolation_forest', 'lof', 'one_class_svm', 'dbscan_outlier'];
+      if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+        errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+      }
+      if (parametros.contamination && (parametros.contamination < 0 || parametros.contamination > 0.5)) {
+        errors.push('Contamination deve estar entre 0 e 0.5');
+      }
+      return errors;
+    },
 
-// ================================================================
-// BIG DATA
-// ================================================================
-'spark_job': (parametros) => {
-  const errors = [];
-  const jobTypes = ['etl', 'analise', 'agregacao', 'ml'];
-  if (parametros.job_type && !jobTypes.includes(parametros.job_type)) {
-    errors.push(`Tipo de job deve ser um de: ${jobTypes.join(', ')}`);
-  }
-  return errors;
-},
+    // ================================================================
+    // BIG DATA
+    // ================================================================
+    'spark_job': (parametros) => {
+      const errors = [];
+      const jobTypes = ['etl', 'analise', 'agregacao', 'ml'];
+      if (parametros.job_type && !jobTypes.includes(parametros.job_type)) {
+        errors.push(`Tipo de job deve ser um de: ${jobTypes.join(', ')}`);
+      }
+      return errors;
+    },
 
-'hadoop_analise': (parametros) => {
-  const errors = [];
-  const operacoes = ['wordcount', 'aggregate', 'filter', 'join'];
-  if (parametros.operacao && !operacoes.includes(parametros.operacao)) {
-    errors.push(`Operação deve ser um de: ${operacoes.join(', ')}`);
-  }
-  return errors;
-},
+    'hadoop_analise': (parametros) => {
+      const errors = [];
+      const operacoes = ['wordcount', 'aggregate', 'filter', 'join'];
+      if (parametros.operacao && !operacoes.includes(parametros.operacao)) {
+        errors.push(`Operação deve ser um de: ${operacoes.join(', ')}`);
+      }
+      return errors;
+    },
 
-'streaming': (parametros) => {
-  const errors = [];
-  if (parametros.window_size && parametros.window_size < 1) {
-    errors.push('Tamanho da janela deve ser pelo menos 1');
-  }
-  return errors;
-},
+    'streaming': (parametros) => {
+      const errors = [];
+      if (parametros.window_size && parametros.window_size < 1) {
+        errors.push('Tamanho da janela deve ser pelo menos 1');
+      }
+      return errors;
+    },
 
-'sql_distribuido': (parametros) => {
-  const errors = [];
-  if (!parametros.query) {
-    errors.push('Query SQL é obrigatória');
-  }
-  return errors;
-}
+    'sql_distribuido': (parametros) => {
+      const errors = [];
+      if (!parametros.query) {
+        errors.push('Query SQL é obrigatória');
+      }
+      return errors;
+    }
     };
   }
 
@@ -187,7 +204,7 @@ class RRunner {
   async execRModel(tipo, dados, parametros = {}) {
     return new Promise((resolve, reject) => {
       try {
-        const execId = uuidv4();
+        const execId = uuidv4(); // ✅ Agora funciona sempre!
         const inputFile = path.join(this.tempDir, `${execId}_input.json`);
         const outputFile = path.join(this.tempDir, `${execId}_output.json`);
 
@@ -623,7 +640,7 @@ class RRunner {
   async execRCommand(comando, dados = {}) {
     return new Promise((resolve, reject) => {
       try {
-        const execId = uuidv4();
+        const execId = uuidv4(); // ✅ Agora funciona sempre!
         const inputFile = path.join(this.tempDir, `${execId}_input.json`);
         const outputFile = path.join(this.tempDir, `${execId}_output.json`);
 
