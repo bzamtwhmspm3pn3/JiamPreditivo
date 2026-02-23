@@ -31,10 +31,25 @@ main <- function() {
     # Extrair parâmetros
     var_analise <- if(!is.null(parametros$var_analise)) parametros$var_analise else names(df)[1]
     n_estados <- if(!is.null(parametros$n_estados)) as.numeric(parametros$n_estados) else 3
+    
+    # 🔥 CORREÇÃO AQUI: nomes_estados pode vir como string ou array
     nomes_estados <- if(!is.null(parametros$nomes_estados)) {
-      strsplit(parametros$nomes_estados, ",")[[1]]
+      if(is.character(parametros$nomes_estados) && length(parametros$nomes_estados) == 1) {
+        # Se for string única, fazer split
+        strsplit(parametros$nomes_estados, ",")[[1]]
+      } else {
+        # Se já for array, usar diretamente
+        as.character(parametros$nomes_estados)
+      }
     } else {
       c("Baixo", "Médio", "Alto")
+    }
+    
+    # Garantir que temos o número correto de nomes
+    if(length(nomes_estados) < n_estados) {
+      nomes_estados <- c(nomes_estados, paste0("Estado", (length(nomes_estados)+1):n_estados))
+    } else if(length(nomes_estados) > n_estados) {
+      nomes_estados <- nomes_estados[1:n_estados]
     }
     
     metodo <- if(!is.null(parametros$metodo)) parametros$metodo else "MLE"
@@ -163,6 +178,25 @@ main <- function() {
       ultimo_trimestre = tail(estados_seq, 3)
     )
     
+    # 🔥 CORREÇÃO: Converter tabelas para listas antes de salvar
+    tabela_ultimo_ano <- as.list(table(periodos$ultimo_ano))
+    tabela_ultimos_6_meses <- as.list(table(periodos$ultimos_6_meses))
+    tabela_ultimo_trimestre <- as.list(table(periodos$ultimo_trimestre))
+    
+    # Calcular tendência com segurança
+    tendencia <- 0
+    if(length(estados_seq) >= 3) {
+      estados_numericos <- as.numeric(factor(estados_seq, levels = nomes_estados))
+      if(length(unique(estados_numericos)) > 1) {
+        modelo_tendencia <- tryCatch({
+          lm(estados_numericos ~ seq_along(estados_numericos))
+        }, error = function(e) NULL)
+        if(!is.null(modelo_tendencia)) {
+          tendencia <- coef(modelo_tendencia)[2]
+        }
+      }
+    }
+    
     # Preparar resultado
     resultado <- list(
       success = TRUE,
@@ -187,18 +221,15 @@ main <- function() {
       distribuicao_estacionaria = as.list(round(stat_dist, 4)),
       metricas = list(
         estabilidade = round(max(abs(eigen_result$values[-idx])), 4),
-        entropia = -sum(stat_dist * log(stat_dist)),
-        convergencia_estimada = round(1 / min(stat_dist[stat_dist > 0]), 0)
+        entropia = -sum(stat_dist * log(stat_dist + 1e-10)),
+        convergencia_estimada = round(1 / min(stat_dist[stat_dist > 0], na.rm = TRUE), 0)
       ),
       probabilidades_primeira_passagem = as.data.frame(as.table(first_passage)),
       analise_temporal = list(
-        ultimo_ano = table(periodos$ultimo_ano),
-        ultimos_6_meses = table(periodos$ultimos_6_meses),
-        ultimo_trimestre = table(periodos$ultimo_trimestre),
-        tendencia = if(length(estados_seq) >= 3) {
-          estados_numericos <- as.numeric(factor(estados_seq, levels = nomes_estados))
-          coef(lm(estados_numericos ~ seq_along(estados_numericos)))$`seq_along(estados_numericos)`
-        } else 0
+        ultimo_ano = tabela_ultimo_ano,
+        ultimos_6_meses = tabela_ultimos_6_meses,
+        ultimo_trimestre = tabela_ultimo_trimestre,
+        tendencia = tendencia
       ),
       interpretacao = list(
         estado_mais_provavel = names(which.max(stat_dist)),

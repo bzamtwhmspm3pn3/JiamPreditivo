@@ -95,6 +95,16 @@ export const getSession = () => {
 
 /**
  * =========================
+ * OBTER TOKEN
+ * =========================
+ */
+export const getToken = () => {
+  const session = getSession();
+  return session?.token || null;
+};
+
+/**
+ * =========================
  * LOGOUT
  * =========================
  */
@@ -106,8 +116,6 @@ export const logout = () => {
 /**
  * =========================
  * RECUPERAÇÃO DE SENHA
- * ⚠️ ATENÇÃO:
- * O BACKEND AINDA NÃO TEM ESTA ROTA
  * =========================
  */
 export const recoverPassword = async (email) => {
@@ -131,24 +139,37 @@ export const recoverPassword = async (email) => {
 
 /**
  * =========================
- * OBTER PERFIL (rota real)
+ * OBTER PERFIL (COM TOKEN)
  * =========================
  */
-export const getUserProfile = async () => {
+export const getUserProfile = async (userId) => {
   try {
-    const session = getSession();
-    if (!session?.token) {
+    const token = getToken();
+    if (!token) {
       return { success: false, message: "Não autenticado" };
     }
 
-    const response = await fetch(`${API_URL}/auth/me`, {
+    const response = await fetch(`${API_URL}/profile/${userId}`, {
+      method: "GET",
       headers: {
-        Authorization: `Bearer ${session.token}`
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
       }
     });
 
-    return await response.json();
+    if (!response.ok) {
+      if (response.status === 401) {
+        // Token expirado
+        logout();
+        return { success: false, message: "Sessão expirada" };
+      }
+      return { success: false, message: "Erro ao buscar perfil" };
+    }
+
+    const data = await response.json();
+    return { success: true, profile: data };
   } catch (error) {
+    console.error("Erro ao buscar perfil:", error);
     return {
       success: false,
       message: "Erro ao buscar perfil"
@@ -158,29 +179,85 @@ export const getUserProfile = async () => {
 
 /**
  * =========================
- * ATUALIZAR PERFIL
- * (rota /api/profile — já existe no server)
+ * UPLOAD DE IMAGEM
  * =========================
  */
-export const updateUserProfile = async (updates) => {
+export const uploadProfileImage = async (userId, imageFile) => {
   try {
-    const session = getSession();
-    if (!session?.token) {
+    const token = getToken();
+    if (!token) {
       return { success: false, message: "Não autenticado" };
     }
 
-    const response = await fetch(`${API_URL}/profile`, {
+    const formData = new FormData();
+    formData.append('imagemPerfil', imageFile);
+
+    const response = await fetch(`${API_URL}/profile/${userId}/image`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`
+        // NÃO colocar Content-Type - o browser define com boundary
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return { success: false, message: "Sessão expirada" };
+      }
+      return { success: false, message: "Erro ao fazer upload" };
+    }
+
+    const data = await response.json();
+    return { success: true, imageUrl: data.imageUrl };
+  } catch (error) {
+    console.error("Erro no upload:", error);
+    return { success: false, message: "Erro ao fazer upload" };
+  }
+};
+
+/**
+ * =========================
+ * ATUALIZAR PERFIL
+ * =========================
+ */
+export const updateUserProfile = async (userId, updates) => {
+  try {
+    const token = getToken();
+    if (!token) {
+      return { success: false, message: "Não autenticado" };
+    }
+
+    console.log('📤 Enviando atualização para o backend:', updates);
+
+    const response = await fetch(`${API_URL}/profile/${userId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${session.token}`
+        Authorization: `Bearer ${token}`
       },
       body: JSON.stringify(updates)
     });
 
-    const data = await response.json();
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return { success: false, message: "Sessão expirada" };
+      }
+      if (response.status === 400) {
+        const errorData = await response.json();
+        return { success: false, message: errorData.message || "Dados inválidos" };
+      }
+      return { success: false, message: "Erro ao atualizar perfil" };
+    }
 
-    if (data.success) {
+    const data = await response.json();
+    console.log('📥 Resposta do backend:', data);
+
+    // Atualizar sessão com novos dados
+    const session = getSession();
+    if (session) {
       const newSession = {
         ...session,
         user: { ...session.user, ...updates }
@@ -188,11 +265,56 @@ export const updateUserProfile = async (updates) => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newSession));
     }
 
-    return data;
+    return { success: true, profile: data };
   } catch (error) {
+    console.error("Erro ao atualizar perfil:", error);
     return {
       success: false,
       message: "Erro ao atualizar perfil"
+    };
+  }
+};
+
+/**
+ * =========================
+ * ATIVAR PRODUTO
+ * =========================
+ */
+export const activateProduct = async (userId, codigo) => {
+  try {
+    const token = getToken();
+    if (!token) {
+      return { success: false, message: "Não autenticado" };
+    }
+
+    const response = await fetch(`${API_URL}/profile/${userId}/activate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ codigo })
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return { success: false, message: "Sessão expirada" };
+      }
+      if (response.status === 400) {
+        const errorData = await response.json();
+        return { success: false, message: errorData.message || "Código inválido" };
+      }
+      return { success: false, message: "Erro ao ativar produto" };
+    }
+
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    console.error("Erro ao ativar produto:", error);
+    return {
+      success: false,
+      message: "Erro ao ativar produto"
     };
   }
 };
@@ -214,6 +336,7 @@ export const confirmEmail = async (token) => {
 
     return await response.json();
   } catch (error) {
+    console.error("Erro ao confirmar email:", error);
     return {
       success: false,
       message: "Erro ao confirmar email"

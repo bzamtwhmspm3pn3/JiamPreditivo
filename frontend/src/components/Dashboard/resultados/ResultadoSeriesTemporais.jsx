@@ -203,54 +203,113 @@ const GraficosSeriesTemporais = ({ dados, tipoModelo }) => {
   }, [dados, tipoModelo]);
 
   // Função para formatar datas para exibição
-  const formatarDataGrafico = (dataStr) => {
-    if (!dataStr) return 'N/D';
-    
-    try {
-      if (typeof dataStr === 'string') {
-        // Se for string no formato "YYYY-MM-DD"
-        if (dataStr.includes('-')) {
-          const [ano, mes] = dataStr.split('-');
-          const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
-          const mesNum = parseInt(mes);
-          if (mesNum >= 1 && mesNum <= 12) {
-            return `${meses[mesNum - 1]}/${ano.slice(2)}`;
-          }
-        }
-        // Se for string no formato "MM/YYYY"
-        else if (dataStr.includes('/')) {
-          const [mes, ano] = dataStr.split('/');
-          const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
-          const mesNum = parseInt(mes);
-          if (mesNum >= 1 && mesNum <= 12) {
-            return `${meses[mesNum - 1]}/${ano}`;
-          }
-        }
+
+const formatarDataGrafico = (dataStr) => {
+  if (!dataStr) return 'N/D';
+  
+  try {
+    // Se for número (Excel serial ou timestamp)
+    if (typeof dataStr === 'number') {
+      // Se for Excel serial (44947)
+      if (dataStr > 40000 && dataStr < 50000) {
+        const data = new Date(1900, 0, dataStr - 1);
+        if (dataStr > 60) data.setDate(data.getDate() - 1);
         
-        // Tentar converter para Date
-        const data = new Date(dataStr);
-        if (!isNaN(data.getTime())) {
-          const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
-          return `${meses[data.getMonth()]}/${data.getFullYear().toString().slice(2)}`;
+        const mes = data.getMonth() + 1;
+        const ano = data.getFullYear();
+        const mesesAbr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
+        return `${mesesAbr[mes - 1]}/${ano.toString().slice(2)}`;
+      }
+      
+      // Se for timestamp
+      const data = new Date(dataStr);
+      if (!isNaN(data.getTime())) {
+        const mesesAbr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
+        return `${mesesAbr[data.getMonth()]}/${data.getFullYear().toString().slice(2)}`;
+      }
+    }
+    
+    // Se for string
+    if (typeof dataStr === 'string') {
+      const str = dataStr.trim().toLowerCase();
+      
+      // Formato: YYYY-MM-DD
+      if (str.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+        const [anoStr, mesStr] = str.split('-');
+        let ano = parseInt(anoStr);
+        const mes = parseInt(mesStr);
+        
+        // Corrigir século se necessário
+        if (ano > 2050) ano = 1900 + (ano % 100);
+        
+        const mesesAbr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
+        if (mes >= 1 && mes <= 12) {
+          return `${mesesAbr[mes - 1]}/${ano.toString().slice(2)}`;
         }
       }
       
-      // Se for número (timestamp)
-      if (typeof dataStr === 'number') {
-        const data = new Date(dataStr);
-        if (!isNaN(data.getTime())) {
-          const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
-          return `${meses[data.getMonth()]}/${data.getFullYear().toString().slice(2)}`;
+      // Formato: DD/MM/YYYY
+      if (str.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+        const [diaStr, mesStr, anoStr] = str.split('/');
+        let ano = parseInt(anoStr);
+        const mes = parseInt(mesStr);
+        
+        if (ano > 2050) ano = 1900 + (ano % 100);
+        
+        const mesesAbr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
+        if (mes >= 1 && mes <= 12) {
+          return `${mesesAbr[mes - 1]}/${ano.toString().slice(2)}`;
         }
       }
-    } catch (error) {
-      console.warn('Erro ao formatar data:', error, dataStr);
+      
+      // Formato: MM/YYYY
+      if (str.match(/^\d{1,2}\/\d{4}$/)) {
+        const [mesStr, anoStr] = str.split('/');
+        let ano = parseInt(anoStr);
+        const mes = parseInt(mesStr);
+        
+        if (ano > 2050) ano = 1900 + (ano % 100);
+        
+        const mesesAbr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
+        if (mes >= 1 && mes <= 12) {
+          return `${mesesAbr[mes - 1]}/${ano.toString().slice(2)}`;
+        }
+      }
+      
+      // Formato abreviado: mmm/YY (ex: nov/25)
+      const matchAbr = str.match(/^([a-z]{3})\/(\d{2,4})$/);
+      if (matchAbr) {
+        const [, mesAbr, anoStr] = matchAbr;
+        const mesesAbr = {
+          'jan': 'Jan', 'fev': 'Fev', 'mar': 'Mar', 'abr': 'Abr', 'mai': 'Mai', 'jun': 'Jun',
+          'jul': 'Jul', 'ago': 'Ago', 'set': 'Set', 'out': 'Out', 'nov': 'Nov', 'dez': 'Dec'
+        };
+        const mesFormatado = mesesAbr[mesAbr.toLowerCase()];
+        if (mesFormatado) {
+          let ano = parseInt(anoStr);
+          if (ano < 100) {
+            ano = ano >= 95 ? 1900 + ano : 2000 + ano;
+          } else if (ano > 2050) {
+            ano = 1900 + (ano % 100);
+          }
+          return `${mesFormatado}/${ano.toString().slice(2)}`;
+        }
+      }
+      
+      // Tentar converter para Date
+      const data = new Date(str);
+      if (!isNaN(data.getTime())) {
+        const mesesAbr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dec'];
+        return `${mesesAbr[data.getMonth()]}/${data.getFullYear().toString().slice(2)}`;
+      }
     }
-    
-    // Fallback: retornar string original truncada
-    return String(dataStr).substring(0, 10);
-  };
-
+  } catch (error) {
+    console.warn('Erro ao formatar data:', error, dataStr);
+  }
+  
+  // Fallback: retornar string original truncada
+  return String(dataStr).substring(0, 10);
+};
   // Função para ordenar dados por data (segura)
   const ordenarPorData = (dadosArray) => {
     if (!dadosArray || !Array.isArray(dadosArray)) return [];
@@ -279,205 +338,456 @@ const GraficosSeriesTemporais = ({ dados, tipoModelo }) => {
   };
 
   // 1. Gráfico de Previsões vs Histórico
-  const dadosPrevisoesHistorico = () => {
-    console.log('📊 Gerando gráfico Previsões vs Histórico:', dadosProcessados);
-    
-    if (!dadosProcessados || (!dadosProcessados.dadosHistoricos?.length && !dadosProcessados.dadosPrevisoes?.length)) {
-      console.log('❌ Sem dados suficientes para gráfico de previsões');
-      return null;
+ const dadosPrevisoesHistorico = () => {
+  console.log('📊 Gerando gráfico Previsões vs Histórico:', dadosProcessados);
+  
+  if (!dadosProcessados || (!dadosProcessados.dadosHistoricos?.length && !dadosProcessados.dadosPrevisoes?.length)) {
+    console.log('❌ Sem dados suficientes para gráfico de previsões');
+    return null;
+  }
+
+  const { dadosHistoricos, dadosPrevisoes, dadosAjustados, nomeSerie } = dadosProcessados;
+  const cores = getCoresModelo();
+
+  // Função auxiliar para formatar números
+  const formatNumber = (num, decimals = 2) => {
+    if (num === null || num === undefined || isNaN(num)) return 'N/A';
+    if (typeof num !== 'number') {
+      const parsed = parseFloat(num);
+      if (isNaN(parsed)) return 'N/A';
+      num = parsed;
     }
-
-    const { dadosHistoricos, dadosPrevisoes, dadosAjustados, nomeSerie } = dadosProcessados;
-    const cores = getCoresModelo();
+    if (Math.abs(num) < 0.0001) return num.toExponential(decimals);
+    return Number(num).toFixed(decimals);
+  };
+  
+  // TRATAR DATAS CORRETAMENTE - CONVERTER TODOS PARA TIMESTAMP
+  const converterDataParaTimestamp = (dataStr) => {
+    if (!dataStr) return null;
     
-    // Combinar e ordenar todos os dados
-    const todosDados = [
-      ...(dadosHistoricos || []),
-      ...(dadosAjustados || []),
-      ...(dadosPrevisoes || [])
-    ];
-    
-    const dadosOrdenados = ordenarPorData(todosDados);
-    
-    // Criar labels
-    const labels = dadosOrdenados.map(d => {
-      if (d.data) {
-        return formatarDataGrafico(d.data);
-      }
-      return `P${dadosOrdenados.indexOf(d) + 1}`;
-    });
-
-    return {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          // Dados históricos
-          {
-            label: 'Dados Históricos',
-            data: dadosOrdenados.map(d => d.tipo === 'historico' ? d.valor : null),
-            borderColor: cores.primaria,
-            backgroundColor: cores.primaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-            borderWidth: 2,
-            fill: false,
-            tension: 0.1,
-            pointRadius: 3,
-            pointHoverRadius: 6,
-            order: 1
-          },
-          // Dados ajustados (fit)
-          {
-            label: 'Modelo Ajustado',
-            data: dadosOrdenados.map(d => d.tipo === 'ajustado' ? d.valor : null),
-            borderColor: cores.terciaria,
-            backgroundColor: cores.terciaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-            borderWidth: 2,
-            borderDash: [3, 3],
-            fill: false,
-            tension: 0.1,
-            pointRadius: 2,
-            order: 2
-          },
-          // Previsões
-          {
-            label: 'Previsões Futuras',
-            data: dadosOrdenados.map(d => d.tipo === 'previsao' ? (d.previsao || d.valor) : null),
-            borderColor: cores.secundaria,
-            backgroundColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
-            borderWidth: 3,
-            fill: false,
-            tension: 0.2,
-            pointRadius: 4,
-            pointHoverRadius: 8,
-            order: 3
-          },
-          // Intervalo de confiança das previsões
-          {
-            label: 'Intervalo de Confiança (95%)',
-            data: dadosOrdenados.map(d => {
-              if (d.tipo === 'previsao' && d.superior) {
-                return d.superior;
-              }
-              return null;
-            }),
-            backgroundColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.2)'),
-            borderColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.3)'),
-            borderWidth: 1,
-            fill: '+1',
-            tension: 0.1,
-            pointRadius: 0,
-            order: 4
-          },
-          {
-            label: '',
-            data: dadosOrdenados.map(d => {
-              if (d.tipo === 'previsao' && d.inferior) {
-                return d.inferior;
-              }
-              return null;
-            }),
-            backgroundColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.2)'),
-            borderColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.3)'),
-            borderWidth: 1,
-            fill: false,
-            tension: 0.1,
-            pointRadius: 0,
-            order: 4
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: {
-            display: true,
-            text: `📈 ${nomeSerie} - Previsões ${tipoModelo.toUpperCase()}`,
-            font: { 
-              size: 16, 
-              weight: 'bold',
-              family: "'Inter', 'Segoe UI', sans-serif"
-            },
-            padding: { top: 10, bottom: 20 }
-          },
-          legend: {
-            position: 'top',
-            labels: {
-              padding: 15,
-              usePointStyle: true,
-              font: { size: 12 }
-            }
-          },
-          tooltip: {
-            backgroundColor: 'rgba(17, 24, 39, 0.9)',
-            titleColor: '#f9fafb',
-            bodyColor: '#f3f4f6',
-            borderColor: 'rgba(255, 255, 255, 0.1)',
-            borderWidth: 1,
-            padding: 12,
-            cornerRadius: 8,
-            mode: 'index',
-            intersect: false,
-            callbacks: {
-              title: (items) => {
-                const item = items[0];
-                const data = dadosOrdenados[item.dataIndex];
-                return data.data ? formatarDataGrafico(data.data) : `Período ${item.dataIndex + 1}`;
-              }
-            }
-          }
-        },
-        scales: {
-          x: {
-            title: {
-              display: true,
-              text: 'Período',
-              font: { size: 12, weight: '600' }
-            },
-            grid: {
-              color: 'rgba(0, 0, 0, 0.05)'
-            },
-            ticks: {
-              maxRotation: 45,
-              font: { size: 11 },
-              color: '#6b7280'
-            }
-          },
-          y: {
-            title: {
-              display: true,
-              text: 'Valor',
-              font: { size: 12, weight: '600' }
-            },
-            grid: {
-              color: 'rgba(0, 0, 0, 0.05)'
-            },
-            ticks: {
-              font: { size: 11 },
-              color: '#6b7280',
-              callback: function(value) {
-                if (Math.abs(value) >= 1000000) {
-                  return (value / 1000000).toFixed(1) + 'M';
-                }
-                if (Math.abs(value) >= 1000) {
-                  return (value / 1000).toFixed(1) + 'k';
-                }
-                return value.toLocaleString('pt-BR');
-              }
-            }
-          }
-        },
-        interaction: {
-          intersect: false,
-          mode: 'index'
-        },
-        animation: {
-          duration: 1000,
-          easing: 'easeOutQuart'
+    try {
+      // Se já for timestamp
+      if (typeof dataStr === 'number') return dataStr;
+      
+      // Formato YYYY-MM-DD
+      if (dataStr.includes('-')) {
+        const parts = dataStr.split('-');
+        if (parts.length >= 2) {
+          const ano = parseInt(parts[0]);
+          const mes = parseInt(parts[1]) - 1;
+          const dia = parts.length > 2 ? parseInt(parts[2]) : 1;
+          
+          // Corrigir século se necessário (para datas como 2095 -> 1995)
+          const anoCorrigido = ano > 2050 ? 1900 + (ano % 100) : ano;
+          return new Date(anoCorrigido, mes, dia).getTime();
         }
       }
+      
+      // Formato DD/MM/YYYY
+      if (dataStr.includes('/')) {
+        const parts = dataStr.split('/');
+        if (parts.length === 3) {
+          const dia = parseInt(parts[0]);
+          const mes = parseInt(parts[1]) - 1;
+          let ano = parseInt(parts[2]);
+          
+          // Corrigir século
+          ano = ano > 2050 ? 1900 + (ano % 100) : ano;
+          return new Date(ano, mes, dia).getTime();
+        }
+        if (parts.length === 2) {
+          const mes = parseInt(parts[0]) - 1;
+          let ano = parseInt(parts[1]);
+          
+          // Corrigir século
+          ano = ano > 2050 ? 1900 + (ano % 100) : ano;
+          return new Date(ano, mes, 1).getTime();
+        }
+      }
+      
+      // Formato mês/ano abreviado (ex: "nov/95")
+      const match = dataStr.match(/([a-z]+)\/(\d{2,4})/i);
+      if (match) {
+        const meses = {
+          'jan': 0, 'fev': 1, 'mar': 2, 'abr': 3, 'mai': 4, 'jun': 5,
+          'jul': 6, 'ago': 7, 'set': 8, 'out': 9, 'nov': 10, 'dez': 11
+        };
+        
+        const mesStr = match[1].toLowerCase().substring(0, 3);
+        const mes = meses[mesStr];
+        let ano = parseInt(match[2]);
+        
+        if (ano < 100) {
+          // Corrigir século: 95 -> 1995, 25 -> 2025
+          ano = ano >= 95 ? 1900 + ano : 2000 + ano;
+        }
+        
+        return new Date(ano, mes, 1).getTime();
+      }
+      
+      // Tentar parse direto
+      const data = new Date(dataStr);
+      if (!isNaN(data.getTime())) return data.getTime();
+      
+    } catch (error) {
+      console.warn('Erro ao converter data:', error, dataStr);
+    }
+    
+    return null;
+  };
+
+  // FUNÇÃO PARA ORDENAR E FORMATAR DATAS
+  const processarConjuntoDados = (dadosArray, tipo) => {
+    if (!dadosArray || !Array.isArray(dadosArray) || dadosArray.length === 0) {
+      return { dados: [], labels: [] };
+    }
+    
+    // Converter e adicionar timestamp
+    const dadosComTimestamp = dadosArray
+      .filter(item => item && item.data)
+      .map(item => {
+        const timestamp = converterDataParaTimestamp(item.data);
+        let valor;
+        
+        if (tipo === 'historico') valor = item.valor;
+        else if (tipo === 'ajustado') valor = item.valor;
+        else if (tipo === 'previsao') valor = item.previsao || item.valor;
+        
+        return {
+          ...item,
+          timestamp,
+          valor: parseFloat(valor) || 0,
+          tipo,
+          inferior: tipo === 'previsao' ? parseFloat(item.inferior) || 0 : null,
+          superior: tipo === 'previsao' ? parseFloat(item.superior) || 0 : null
+        };
+      })
+      .filter(item => item.timestamp !== null)
+      .sort((a, b) => a.timestamp - b.timestamp); // Ordenar por timestamp
+    
+    // Criar labels formatadas
+    const labels = dadosComTimestamp.map(item => {
+      if (item.data) {
+        return formatarDataGrafico(item.data);
+      }
+      return null;
+    }).filter(Boolean);
+    
+    return {
+      dados: dadosComTimestamp,
+      labels
     };
   };
+
+  // Processar cada conjunto separadamente
+  const historicoProcessado = processarConjuntoDados(dadosHistoricos, 'historico');
+  const ajustadosProcessado = processarConjuntoDados(dadosAjustados, 'ajustado');
+  const previsoesProcessado = processarConjuntoDados(dadosPrevisoes, 'previsao');
+  
+  // OBTER TODAS AS DATAS ÚNICAS E ORDENADAS
+  const todasDatas = [];
+  
+  // Adicionar todas as datas processadas
+  historicoProcessado.dados.forEach(item => {
+    if (item.data && !todasDatas.includes(item.data)) {
+      todasDatas.push(item.data);
+    }
+  });
+  
+  ajustadosProcessado.dados.forEach(item => {
+    if (item.data && !todasDatas.includes(item.data)) {
+      todasDatas.push(item.data);
+    }
+  });
+  
+  previsoesProcessado.dados.forEach(item => {
+    if (item.data && !todasDatas.includes(item.data)) {
+      todasDatas.push(item.data);
+    }
+  });
+  
+  // Ordenar datas por timestamp
+  const datasOrdenadas = [...todasDatas].sort((a, b) => {
+    const timestampA = converterDataParaTimestamp(a);
+    const timestampB = converterDataParaTimestamp(b);
+    return timestampA - timestampB;
+  });
+  
+  // Criar labels formatadas para o eixo X
+  const labels = datasOrdenadas.map(data => formatarDataGrafico(data));
+  
+  // Criar datasets
+  const datasets = [];
+  
+  // Dataset 1: Dados históricos (CORRIGIDO - usar array de valores)
+  if (historicoProcessado.dados.length > 0) {
+    console.log('📊 Criando dataset histórico com', historicoProcessado.dados.length, 'pontos');
+    
+    // Criar mapa de valores históricos por data
+    const historicoMap = new Map();
+    historicoProcessado.dados.forEach(item => {
+      historicoMap.set(item.data, item.valor);
+    });
+    
+    // Criar array de valores correspondente às labels
+    const valoresHistoricos = datasOrdenadas.map(data => {
+      return historicoMap.has(data) ? historicoMap.get(data) : null;
+    });
+    
+    datasets.push({
+      label: 'Dados Históricos',
+      data: valoresHistoricos,
+      borderColor: cores.primaria,
+      backgroundColor: cores.primaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+      borderWidth: 2,
+      fill: false,
+      tension: 0.1,
+      pointRadius: 3,
+      pointHoverRadius: 6,
+      order: 1
+    });
+  }
+  
+  // Dataset 2: Dados ajustados
+  if (ajustadosProcessado.dados.length > 0) {
+    const ajustadosMap = new Map();
+    ajustadosProcessado.dados.forEach(item => {
+      ajustadosMap.set(item.data, item.valor);
+    });
+    
+    const valoresAjustados = datasOrdenadas.map(data => {
+      return ajustadosMap.has(data) ? ajustadosMap.get(data) : null;
+    });
+    
+    datasets.push({
+      label: 'Modelo Ajustado',
+      data: valoresAjustados,
+      borderColor: cores.terciaria,
+      backgroundColor: cores.terciaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+      borderWidth: 2,
+      borderDash: [3, 3],
+      fill: false,
+      tension: 0.1,
+      pointRadius: 2,
+      order: 2
+    });
+  }
+  
+  // Dataset 3: Previsões com intervalos (CORRIGIDO)
+  if (previsoesProcessado.dados.length > 0) {
+    console.log('📊 Criando dataset previsões com', previsoesProcessado.dados.length, 'pontos');
+    
+    // Criar mapas para previsões e intervalos
+    const previsoesMap = new Map();
+    const inferiorMap = new Map();
+    const superiorMap = new Map();
+    
+    previsoesProcessado.dados.forEach(item => {
+      previsoesMap.set(item.data, item.valor);
+      if (item.inferior !== null) inferiorMap.set(item.data, item.inferior);
+      if (item.superior !== null) superiorMap.set(item.data, item.superior);
+    });
+    
+    // Dataset 3.1: Previsões pontuais
+    const valoresPrevisoes = datasOrdenadas.map(data => {
+      return previsoesMap.has(data) ? previsoesMap.get(data) : null;
+    });
+    
+    datasets.push({
+      label: 'Previsões Futuras',
+      data: valoresPrevisoes,
+      borderColor: cores.secundaria,
+      backgroundColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+      borderWidth: 3,
+      fill: false,
+      tension: 0.2,
+      pointRadius: 4,
+      pointHoverRadius: 8,
+      order: 3
+    });
+    
+    // Dataset 3.2: Intervalo de confiança (CORRIGIDO)
+    // Verificar se temos intervalos válidos
+    const temIntervalos = previsoesProcessado.dados.some(p => p.inferior !== null && p.superior !== null);
+    
+    if (temIntervalos) {
+      console.log('📊 Criando intervalo de confiança...');
+      
+      // Criar arrays para limites inferior e superior
+      const valoresInferiores = datasOrdenadas.map(data => {
+        return inferiorMap.has(data) ? inferiorMap.get(data) : null;
+      });
+      
+      const valoresSuperiores = datasOrdenadas.map(data => {
+        return superiorMap.has(data) ? superiorMap.get(data) : null;
+      });
+      
+      // Dataset para limite superior
+      datasets.push({
+        label: 'Limite Superior (95%)',
+        data: valoresSuperiores,
+        borderColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.5)'),
+        backgroundColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.1)'),
+        borderWidth: 1,
+        borderDash: [2, 2],
+        fill: false,
+        tension: 0,
+        pointRadius: 0,
+        order: 4
+      });
+      
+      // Dataset para limite inferior (com fill para criar área)
+      datasets.push({
+        label: 'Limite Inferior (95%)',
+        data: valoresInferiores,
+        borderColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.5)'),
+        backgroundColor: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.2)'),
+        borderWidth: 1,
+        borderDash: [2, 2],
+        fill: {
+          target: '+1', // Preencher até o dataset anterior (limite superior)
+          above: cores.secundaria.replace('rgb', 'rgba').replace(')', ', 0.2)')
+        },
+        tension: 0,
+        pointRadius: 0,
+        order: 5
+      });
+    }
+  }
+  
+  return {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: datasets
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: `📈 ${nomeSerie} - Previsões ${tipoModelo.toUpperCase()}`,
+          font: { 
+            size: 16, 
+            weight: 'bold',
+            family: "'Inter', 'Segoe UI', sans-serif"
+          },
+          padding: { top: 10, bottom: 20 }
+        },
+        legend: {
+          position: 'top',
+          labels: {
+            padding: 15,
+            usePointStyle: true,
+            font: { size: 12 }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(17, 24, 39, 0.9)',
+          titleColor: '#f9fafb',
+          bodyColor: '#f3f4f6',
+          borderColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 1,
+          padding: 12,
+          cornerRadius: 8,
+          mode: 'index',
+          intersect: false,
+          callbacks: {
+            title: (items) => {
+              if (items.length > 0) {
+                const dataIndex = items[0].dataIndex;
+                if (labels[dataIndex]) {
+                  return labels[dataIndex];
+                }
+              }
+              return 'Período';
+            },
+            label: (context) => {
+              const label = context.dataset.label;
+              const value = context.parsed.y;
+              
+              // Para intervalos de confiança, mostrar mais informações
+              if (label.includes('Limite Superior') || label.includes('Limite Inferior')) {
+                return `${label}: ${formatNumber(value, 4)}`;
+              }
+              
+              return `${label}: ${formatNumber(value, 4)}`;
+            },
+            afterBody: (items) => {
+              // Adicionar informações extras para previsões com intervalo
+              if (items.length > 0) {
+                const dataIndex = items[0].dataIndex;
+                const previsaoItem = previsoesProcessado.dados.find(d => 
+                  d.data === datasOrdenadas[dataIndex]
+                );
+                
+                if (previsaoItem && previsaoItem.inferior && previsaoItem.superior) {
+                  const amplitude = previsaoItem.superior - previsaoItem.inferior;
+                  return [
+                    `Intervalo: ${formatNumber(previsaoItem.inferior, 4)} - ${formatNumber(previsaoItem.superior, 4)}`,
+                    `Amplitude: ${formatNumber(amplitude, 4)}`
+                  ];
+                }
+              }
+              return [];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Período',
+            font: { size: 12, weight: '600' }
+          },
+          grid: {
+            color: 'rgba(0, 0, 0, 0.05)'
+          },
+          ticks: {
+            maxRotation: 45,
+            font: { size: 11 },
+            color: '#6b7280'
+          }
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Valor',
+            font: { size: 12, weight: '600' }
+          },
+          grid: {
+            color: 'rgba(0, 0, 0, 0.05)'
+          },
+          ticks: {
+            font: { size: 11 },
+            color: '#6b7280',
+            callback: function(value) {
+              if (value === null || value === undefined) return '';
+              if (Math.abs(value) >= 1000000) {
+                return (value / 1000000).toFixed(1) + 'M';
+              }
+              if (Math.abs(value) >= 1000) {
+                return (value / 1000).toFixed(1) + 'k';
+              }
+              return value.toLocaleString('pt-BR');
+            }
+          }
+        }
+      },
+      interaction: {
+        intersect: false,
+        mode: 'index'
+      },
+      animation: {
+        duration: 1000,
+        easing: 'easeOutQuart'
+      },
+      spanGaps: true // Permitir gaps nos dados
+    }
+  };
+};
 
   // 2. Gráfico de Análise de Tendência
   const dadosTendencia = () => {
@@ -1256,38 +1566,49 @@ const GraficosSeriesTemporais = ({ dados, tipoModelo }) => {
 
     const graficoAtual = graficos[graficoAtivo];
 
-    if (!graficoAtual) {
-      return (
-        <div className="h-64 flex items-center justify-center">
-          <div className="text-center text-gray-500">
-            <div className="text-3xl mb-2">📊</div>
-            <p>Dados insuficientes para gerar este gráfico</p>
-            <p className="text-sm mt-2">
-              {graficoAtivo === 'previsoes' 
-                ? 'Este gráfico requer dados históricos e de previsão' 
-                : graficoAtivo === 'coeficientes'
-                ? 'Este gráfico requer coeficientes do modelo'
-                : graficoAtivo === 'residuos'
-                ? 'Este gráfico requer dados de resíduos'
-                : 'Verifique se o modelo foi treinado com sucesso'}
-            </p>
-          </div>
+     if (!graficoAtual) {
+    return (
+      <div className="h-64 flex items-center justify-center">
+        <div className="text-center text-gray-500">
+          <div className="text-3xl mb-2">📊</div>
+          <p>Dados insuficientes para gerar este gráfico</p>
+          <p className="text-sm mt-2">
+            {graficoAtivo === 'previsoes' 
+              ? 'Este gráfico requer dados históricos e de previsão' 
+              : graficoAtivo === 'coeficientes'
+              ? 'Este gráfico requer coeficientes do modelo'
+              : graficoAtivo === 'residuos'
+              ? 'Este gráfico requer dados de resíduos'
+              : 'Verifique se o modelo foi treinado com sucesso'}
+          </p>
         </div>
-      );
-    }
+      </div>
+    );
+  }
+
+  // ✅ CORREÇÃO: Para gráficos com dados dinâmicos, usar Line com options
+  if (graficoAtual.type === 'line') {
+    return (
+      <div style={{ position: 'relative', height: '500px' }}>
+        <Line
+          ref={chartRef}
+          data={graficoAtual.data}
+          options={graficoAtual.options}
+        />
+      </div>
+    );
+  }
 
     // Renderizar gráfico baseado no tipo
     switch (graficoAtual.type) {
-      case 'bar':
-        return <Bar ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
-      case 'line':
-        return <Line ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
-      case 'scatter':
-        return <Scatter ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
-      default:
-        return <Bar ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
-    }
-  };
+    case 'bar':
+      return <Bar ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
+    case 'scatter':
+      return <Scatter ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
+    default:
+      return <Bar ref={chartRef} data={graficoAtual.data} options={graficoAtual.options} />;
+  }
+};
 
   // Determinar quais gráficos estão disponíveis
   const getGraficosDisponiveis = () => {

@@ -12,6 +12,8 @@ import Badge from '../componentes/Badge';
 
 // Componentes de Resultados
 import ResultadoLogistica from '../resultados/ResultadoLogistica';
+import ModelosService from '../../../services/modelosService';
+
 
 // Importando Checkbox corretamente
 import Checkbox from '../componentes/Checkbox';
@@ -36,37 +38,55 @@ export default function LinearLogistica({ dados, onSaveModel, modelosAjustados, 
   const [selecaoX, setSelecaoX] = useState({}); // Estado para checkbox de cada variável X
   const [dadosArray, setDadosArray] = useState([]); // 🔥 ARMAZENAR DADOS EXTRAÍDOS LOCALMENTE
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config, modo) => {
-    if (!onResultadoModelo) return;
+
+// LinearLogistica.jsx - Função salvarResultadoNoDashboard (linha ~80)
+const salvarResultadoNoDashboard = async (resultado, config) => {
+  if (!onResultadoModelo) return;
+  
+  try {
+    // Construir nome baseado no modo
+    const modo = config.modo || 'simples';
+    const nomeBase = modo === 'simples' 
+      ? `Regressão Logística Simples: ${config.y} ~ ${config.x}`
+      : `Regressão Logística Múltipla: ${config.y} ~ ${Array.isArray(config.x) ? config.x.join(' + ') : config.x}`;
     
-    try {
-      const nomeModelo = modo === 'simples' 
-        ? `Regressão Logística Simples: ${config.y} ~ ${config.x}`
-        : `Regressão Logística Múltipla: ${config.y} ~ ${config.x?.join?.(' + ') || config.x}`;
-      
-      const dadosParaDashboard = {
-        nome: nomeModelo,
-        tipo: "regressao_logistica",
-        dados: resultado,
-        parametros: {
-          ...config,
-          modo: modo,
-          link_function: config.link || 'logit'
-        },
-        classificacao: calcularClassificacao(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetrics(resultado),
-        categoria: "previsoes",
-        fonte: resultado.fonte || "backend"
-      };
-      
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
+    const dadosParaDashboard = {
+      nome: nomeBase,
+      tipo: "regressao_logistica",
+      dados: resultado,
+      parametros: config,
+      classificacao: calcularClassificacao(resultado),
+      timestamp: new Date().toISOString(),
+      metrics: extrairMetrics(resultado),
+      categoria: "classificacao"
+    };
+
+    // 1. Enviar para o Dashboard
+    onResultadoModelo(dadosParaDashboard);
+    console.log('📤 Resultado salvo no Dashboard:', dadosParaDashboard.nome);
+    
+    // 2. Salvar no MongoDB
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: dadosParaDashboard.nome,
+      tipo: "regressao_logistica",
+      resultado: resultado,
+      parametros: config,
+      classificacao: dadosParaDashboard.classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: dadosParaDashboard.metrics
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo salvo no MongoDB com ID:', salvo.id);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
     }
-  };
+    
+  } catch (error) {
+    console.error('❌ Erro ao salvar:', error);
+  }
+};
 
   // 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO
   const calcularClassificacao = (resultado) => {

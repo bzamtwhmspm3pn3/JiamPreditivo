@@ -12,6 +12,7 @@ import Badge from '../componentes/Badge';
 
 // Componentes de Resultados
 import ResultadoSeriesTemporais from '../resultados/ResultadoSeriesTemporais';
+import ModelosService from '../../../services/modelosService';
 
 // Função para extrair dados do objeto
 const extrairDadosArray = (dadosObj) => {
@@ -346,42 +347,6 @@ const executarFallbackLocalARIMA = (dadosArray, variavelY, variavelData, config)
   }
 };
 
-// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO ARIMA
-const calcularClassificacaoARIMA = (resultado) => {
-  if (!resultado) return "MODERADA";
-  
-  const mape = resultado.metricas?.mape || 20;
-  const r2 = resultado.metricas?.r2 || 0;
-  const aic = resultado.metricas?.aic || 1000;
-  
-  // Classificação baseada em múltiplas métricas
-  if ((mape < 10 && r2 > 0.85) || (mape < 12 && r2 > 0.9)) return "ALTA";
-  if ((mape < 18 && r2 > 0.75) || (mape < 20 && r2 > 0.8)) return "MODERADA";
-  if ((mape < 25 && r2 > 0.65) || (mape < 30 && r2 > 0.7)) return "BAIXA";
-  
-  return "MUITO BAIXA";
-};
-
-// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS ARIMA
-const extrairMetricsARIMA = (resultado) => {
-  if (!resultado) return {};
-  
-  return {
-    mape: resultado.metricas?.mape,
-    rmse: resultado.metricas?.rmse,
-    mae: resultado.metricas?.mae,
-    r2: resultado.metricas?.r2,
-    aic: resultado.metricas?.aic,
-    bic: resultado.metricas?.bic,
-    log_likelihood: resultado.metricas?.log_likelihood,
-    ordem: resultado.modelo_info?.ordem,
-    n_observacoes: resultado.modelo_info?.n_observacoes,
-    frequencia: resultado.modelo_info?.frequencia,
-    n_previsoes: resultado.modelo_info?.n_previsoes,
-    sigma2: resultado.parametros_ajustados?.sigma2,
-    intercept: resultado.parametros_ajustados?.intercept
-  };
-};
 
 export default function ARIMA({ dados, onSaveModel, modelosAjustados, onVoltar, statusSistema, onResultadoModelo }) {
   const [variaveis, setVariaveis] = useState([]);
@@ -402,29 +367,136 @@ export default function ARIMA({ dados, onSaveModel, modelosAjustados, onVoltar, 
   const [opcoesPeriodoInicial, setOpcoesPeriodoInicial] = useState([]);
   const [infoFrequencia, setInfoFrequencia] = useState({ tipo: 'MENSAL', label: 'Mensal' });
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
+// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E MONGODB
+const salvarResultadoNoDashboard = async (resultado, config) => {
+  // 🔥 VERIFICAÇÃO DE SEGURANÇA
+  if (!onResultadoModelo) {
+    console.warn('⚠️ onResultadoModelo não está disponível - salvando apenas no MongoDB');
+  }
+  
+  try {
+    const nome = `ARIMA(${config.p},${config.d},${config.q}): ${config.y || 'série temporal'}`;
     
-    try {
-      const dadosParaDashboard = {
-        nome: `ARIMA(${config.p},${config.d},${config.q}): ${config.y}`,
-        tipo: "arima",
-        dados: resultado,
-        parametros: config,
-        classificacao: calcularClassificacaoARIMA(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetricsARIMA(resultado),
-        categoria: "series_temporais",
-        fonte: resultado.fonte || 'backend'
-      };
-      
+    // Calcular classificação e métricas
+    const classificacao = calcularClassificacaoARIMA(resultado);
+    const metrics = extrairMetricsARIMA(resultado);
+    
+    const dadosParaDashboard = {
+      nome: nome,
+      tipo: "arima",
+      dados: resultado,
+      parametros: config,
+      classificacao: classificacao,
+      timestamp: new Date().toISOString(),
+      metrics: metrics,
+      categoria: "series_temporais",
+      fonte: resultado.fonte || 'backend'
+    };
+
+    // 1. Dashboard (SÓ SE EXISTIR)
+    if (onResultadoModelo) {
       onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado ARIMA salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
+      console.log('📤 Resultado ARIMA salvo no Dashboard:', nome);
     }
+    
+    // 2. 🔥 MONGODB (SEMPRE TENTA)
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: nome,
+      tipo: "arima",
+      resultado: resultado,
+      parametros: config,
+      classificacao: classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: metrics,
+      qualidade: resultado.metricas || resultado.qualidade || {}
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo ARIMA salvo no MongoDB com ID:', salvo.id);
+      console.log(`📊 Classificação: ${classificacao}`);
+      console.log(`📈 MAPE: ${(metrics.mape || 0).toFixed(2)}%`);
+      console.log(`📉 AIC: ${(metrics.aic || 0).toFixed(2)}`);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+    }
+    
+  } catch (error) {
+    console.error('❌ Erro ao salvar:', error);
+  }
+};
+
+// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO ARIMA (VERSÃO MELHORADA)
+const calcularClassificacaoARIMA = (resultado) => {
+  if (!resultado) return "MODERADA";
+  
+  const metricas = resultado.metricas || resultado.qualidade || {};
+  
+  const mape = metricas.mape || 100;
+  const rmse = metricas.rmse || Infinity;
+  const r2 = metricas.r2 || 0;
+  const aic = metricas.aic || Infinity;
+  const bic = metricas.bic || Infinity;
+  
+  // ARIMA: MAPE, AIC e BIC são métricas importantes
+  if (mape < 5 || r2 > 0.95 || (aic < 500 && mape < 10)) return "EXCELENTE";
+  if (mape < 10 || r2 > 0.90 || aic < 800) return "BOA";
+  if (mape < 15 || r2 > 0.85 || aic < 1200) return "MODERADA";
+  if (mape < 25 || r2 > 0.75 || aic < 2000) return "BAIXA";
+  
+  return "MUITO BAIXA";
+};
+
+// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS ARIMA (VERSÃO MELHORADA)
+const extrairMetricsARIMA = (resultado) => {
+  if (!resultado) return {};
+  
+  const metricas = resultado.metricas || resultado.qualidade || {};
+  const modeloInfo = resultado.modelo_info || resultado.dados_info || {};
+  const params = resultado.parametros_ajustados || {};
+  
+  return {
+    // Métricas de erro
+    mape: metricas.mape,
+    rmse: metricas.rmse,
+    mae: metricas.mae,
+    mse: metricas.mse,
+    
+    // Métricas de ajuste
+    r2: metricas.r2,
+    r2_ajustado: metricas.r2_ajustado,
+    
+    // Critérios de informação
+    aic: metricas.aic,
+    bic: metricas.bic,
+    aicc: metricas.aicc,
+    
+    // Parâmetros do modelo
+    p: params.p || metricas.p,
+    d: params.d || metricas.d,
+    q: params.q || metricas.q,
+    sigma2: params.sigma2,
+    intercept: params.intercept,
+    
+    // Coeficientes
+    ar: params.ar || [],
+    ma: params.ma || [],
+    
+    // Informações dos dados
+    n_observacoes: modeloInfo.n_observacoes,
+    n_previsoes: modeloInfo.n_previsoes,
+    frequencia: modeloInfo.frequencia,
+    periodo_inicio: modeloInfo.periodo_inicio,
+    periodo_fim: modeloInfo.periodo_fim,
+    
+    // Estatísticas adicionais
+    log_likelihood: metricas.log_likelihood,
+    residuos_media: metricas.residuos_media,
+    residuos_desvio: metricas.residuos_desvio,
+    ljung_box_pvalor: metricas.ljung_box_pvalor
   };
+};
+
 
   // Extrair variáveis dos dados
   useEffect(() => {

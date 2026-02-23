@@ -10,6 +10,8 @@ import Select from '../componentes/Select';
 import { Input, Label } from '../componentes/Input';
 import Badge from '../componentes/Badge';
 import ResultadoML from '../resultados/ResultadoML';
+import ModelosService from '../../../services/modelosService';
+
 
 // Função para extrair dados do objeto
 const extrairDadosArray = (dadosObj) => {
@@ -49,65 +51,113 @@ export default function XGBoost({ dados, onSaveModel, modelosAjustados, onVoltar
   const [visualizacaoAtiva, setVisualizacaoAtiva] = useState('configuracao');
   const [infoDados, setInfoDados] = useState({ linhas: 0, colunas: 0, amostra: [] });
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
-    
-    try {
-      const dadosParaDashboard = {
-        nome: `XGBoost: ${config.y} ~ ${config.features}`,
-        tipo: "xgboost",
-        dados: resultado,
-        parametros: config,
-        classificacao: calcularClassificacao(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetrics(resultado),
-        categoria: "previsoes"
-      };
-      
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado XGBoost salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
-    }
-  };
 
-  // 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO
-  const calcularClassificacao = (resultado) => {
-    if (!resultado) return "MODERADA";
+// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E MONGODB
+const salvarResultadoNoDashboard = async (resultado, config) => {
+  if (!onResultadoModelo) return;
+  
+  try {
+    const nome = `XGBoost: ${config.target || config.y} ~ ${Array.isArray(config.features) ? config.features.join(', ') : config.features}`;
     
-    const accuracy = resultado.metricas_xgboost?.accuracy || resultado.accuracy || 0;
-    const mse = resultado.metricas_xgboost?.mse || resultado.mse || 0;
-    const r2 = resultado.metricas_xgboost?.r2 || resultado.r_squared || 0;
-    
-    // Classificação baseada em métricas
-    if (accuracy > 0.9 || r2 > 0.9 || mse < 0.05) return "ALTA";
-    if (accuracy > 0.8 || r2 > 0.8 || mse < 0.1) return "MODERADA";
-    if (accuracy > 0.7 || r2 > 0.7 || mse < 0.2) return "BAIXA";
-    
-    return "MUITO BAIXA";
-  };
-
-  // 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS
-  const extrairMetrics = (resultado) => {
-    if (!resultado) return {};
-    
-    return {
-      accuracy: resultado.metricas_xgboost?.accuracy || resultado.accuracy,
-      precision: resultado.metricas_xgboost?.precision || resultado.precision,
-      recall: resultado.metricas_xgboost?.recall || resultado.recall,
-      f1_score: resultado.metricas_xgboost?.f1_score || resultado.f1_score,
-      mse: resultado.metricas_xgboost?.mse || resultado.mse,
-      rmse: resultado.metricas_xgboost?.rmse || resultado.rmse,
-      r_squared: resultado.metricas_xgboost?.r2 || resultado.r_squared,
-      mae: resultado.metricas_xgboost?.mae || resultado.mae,
-      ganho_features: resultado.ganho_features,
-      cobertura_features: resultado.cobertura_features,
-      n_arvores: resultado.parametros_usados?.n_estimators || 100,
-      max_depth: resultado.parametros_usados?.max_depth || 6,
-      learning_rate: resultado.parametros_usados?.learning_rate || 0.1
+    const dadosParaDashboard = {
+      nome: nome,
+      tipo: "xgboost",
+      dados: resultado,
+      parametros: config,
+      classificacao: calcularClassificacao(resultado),
+      timestamp: new Date().toISOString(),
+      metrics: extrairMetrics(resultado),
+      categoria: "machine_learning"
     };
+
+    // 1. Dashboard
+    onResultadoModelo(dadosParaDashboard);
+    console.log('📤 Resultado XGBoost salvo no Dashboard:', nome);
+    
+    // 2. 🔥 MONGODB
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: nome,
+      tipo: "xgboost",
+      resultado: resultado,
+      parametros: config,
+      classificacao: dadosParaDashboard.classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: dadosParaDashboard.metrics
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo XGBoost salvo no MongoDB com ID:', salvo.id);
+      console.log(`📊 Classificação: ${dadosParaDashboard.classificacao}`);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+    }
+    
+  } catch (error) {
+    console.error('Erro ao salvar:', error);
+  }
+};
+
+// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO (VERSÃO MELHORADA)
+const calcularClassificacao = (resultado) => {
+  if (!resultado) return "MODERADA";
+  
+  // Tentar diferentes fontes de métricas
+  const metricas = resultado.metricas_xgboost || resultado.metrics || resultado.qualidade || {};
+  
+  const accuracy = metricas.accuracy || metricas.acuracia || 0;
+  const auc = metricas.auc || 0;
+  const logLoss = metricas.log_loss || metricas.logloss || 1;
+  const mse = metricas.mse || metricas.mean_squared_error || 1;
+  const r2 = metricas.r2 || metricas.r_squared || 0;
+  
+  // XGBoost: AUC e LogLoss são métricas importantes
+  if (accuracy > 0.95 || auc > 0.98 || logLoss < 0.1 || r2 > 0.95) return "EXCELENTE";
+  if (accuracy > 0.85 || auc > 0.90 || logLoss < 0.2 || r2 > 0.85) return "BOA";
+  if (accuracy > 0.75 || auc > 0.80 || logLoss < 0.3 || r2 > 0.75) return "MODERADA";
+  if (accuracy > 0.65 || auc > 0.70 || logLoss < 0.4 || r2 > 0.65) return "BAIXA";
+  
+  return "MUITO BAIXA";
+};
+
+// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS (VERSÃO MELHORADA)
+const extrairMetrics = (resultado) => {
+  if (!resultado) return {};
+  
+  const metricas = resultado.metricas_xgboost || resultado.metrics || resultado.qualidade || {};
+  const params = resultado.parametros_usados || {};
+  
+  return {
+    // Métricas de classificação
+    accuracy: metricas.accuracy || metricas.acuracia,
+    precision: metricas.precision || metricas.precisao,
+    recall: metricas.recall,
+    f1_score: metricas.f1_score || metricas.f1,
+    auc: metricas.auc,
+    log_loss: metricas.log_loss || metricas.logloss,
+    
+    // Métricas de regressão
+    mse: metricas.mse || metricas.mean_squared_error,
+    rmse: metricas.rmse,
+    mae: metricas.mae || metricas.mean_absolute_error,
+    r_squared: metricas.r2 || metricas.r_squared,
+    
+    // Importância das features
+    ganho_features: metricas.ganho_features || resultado.ganho_features,
+    cobertura_features: metricas.cobertura_features || resultado.cobertura_features,
+    
+    // Parâmetros do modelo
+    n_estimators: params.n_estimators || params.n_trees || 100,
+    max_depth: params.max_depth || 6,
+    learning_rate: params.learning_rate || params.eta || 0.1,
+    subsample: params.subsample || 1,
+    colsample_bytree: params.colsample_bytree || 1,
+    
+    // Estatísticas adicionais
+    n_iteracoes: resultado.n_iteracoes,
+    tempo_treino: resultado.tempo_treino
   };
+};
 
   // 🔥 FUNÇÃO PARA EXECUTAR FALLBACK (SIMULAÇÃO LOCAL)
   const executarFallbackLocal = (dadosArray, variavelY, variaveisPreditoras, config) => {

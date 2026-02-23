@@ -11,7 +11,9 @@ import { Input, Label } from '../componentes/Input';
 import Badge from '../componentes/Badge';
 
 // Componentes de Resultados
-import ResultadoProphet from '../resultados/ResultadoProphet'; 
+import ResultadoProphet from '../resultados/ResultadoProphet';
+import ModelosService from '../../../services/modelosService';
+ 
 
 // Função para extrair dados do objeto
 const extrairDadosArray = (dadosObj) => {
@@ -345,68 +347,7 @@ const executarFallbackLocalProphet = (dadosArray, variavelY, variavelData, confi
   }
 };
 
-// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO PROPHET
-const calcularClassificacaoProphet = (resultado) => {
-  if (!resultado) return "MODERADA";
-  
-  const mape = resultado.metricas?.mape || 15;
-  const r2 = resultado.metricas?.r2 || 0;
-  
-  if (mape < 8 || r2 > 0.9) return "ALTA";
-  if (mape < 15 || r2 > 0.8) return "MODERADA";
-  if (mape < 25 || r2 > 0.7) return "BAIXA";
-  return "MUITO BAIXA";
-};
 
-// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS PROPHET
-const extrairMetricsProphet = (resultado) => {
-  if (!resultado) return {};
-  
-  return {
-    mape: resultado.metricas?.mape,
-    rmse: resultado.metricas?.rmse,
-    mae: resultado.metricas?.mae,
-    r2: resultado.metricas?.r2,
-    mad: resultado.metricas?.mad,
-    mse: resultado.metricas?.mse,
-    n_observacoes: resultado.modelo_info?.n_observacoes,
-    frequencia: resultado.modelo_info?.frequencia,
-    crescimento: resultado.parametros_ajustados?.growth,
-    n_previsoes: resultado.modelo_info?.n_previsoes,
-    periodo_inicio: resultado.modelo_info?.periodo_inicio,
-    intervalo_confianca: resultado.parametros_ajustados?.interval_width
-  };
-};
-
-// 🔥 FUNÇÃO PARA NORMALIZAR RESULTADO PARA EXIBIÇÃO
-const normalizarResultadoParaExibicao = (modeloCompleto) => {
-  if (!modeloCompleto) return null;
-  
-  // Se já tiver a estrutura esperada pelo ResultadoProphet
-  if (modeloCompleto.previsoes || modeloCompleto.metricas) {
-    return modeloCompleto;
-  }
-  
-  // Se estiver dentro de propriedade 'resultado'
-  if (modeloCompleto.resultado) {
-    return modeloCompleto.resultado;
-  }
-  
-  // Tentar extrair de outras estruturas comuns
-  const resultadoData = modeloCompleto.resultado || modeloCompleto;
-  
-  return {
-    previsoes: resultadoData.previsoes || resultadoData.predictions || [],
-    ajustados: resultadoData.ajustados || resultadoData.fitted || [],
-    residuos: resultadoData.residuos || resultadoData.residuals || [],
-    metricas: resultadoData.metricas || resultadoData.metrics || {},
-    interpretacao_tecnica: resultadoData.interpretacao_tecnica || resultadoData.technical_interpretation || {},
-    dados_originais: resultadoData.dados_originais || resultadoData.original_data || {},
-    periodo_previsao: resultadoData.periodo_previsao || resultadoData.forecast_period || {},
-    qualidade_ajuste: resultadoData.qualidade_ajuste || resultadoData.fit_quality || {},
-    modelo_info: resultadoData.modelo_info || resultadoData.model_info || {}
-  };
-};
 
 export default function Prophet({ dados, onSaveModel, modelosAjustados, onVoltar, statusSistema, onResultadoModelo }) {
   const [variaveis, setVariaveis] = useState([]);
@@ -429,29 +370,159 @@ export default function Prophet({ dados, onSaveModel, modelosAjustados, onVoltar
   const [opcoesPeriodoInicial, setOpcoesPeriodoInicial] = useState([]);
   const [infoFrequencia, setInfoFrequencia] = useState({ tipo: 'MENSAL', label: 'Mensal' });
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
+  // Prophet.jsx
+
+// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E MONGODB
+const salvarResultadoNoDashboard = async (resultado, config) => {
+  // 🔥 VERIFICAÇÃO DE SEGURANÇA
+  if (!onResultadoModelo) {
+    console.warn('⚠️ onResultadoModelo não está disponível - salvando apenas no MongoDB');
+  }
+  
+  try {
+    const nome = `Prophet(${config.crescimento || 'linear'}): ${config.y || 'série temporal'}`;
     
-    try {
-      const dadosParaDashboard = {
-        nome: `Prophet(${config.crescimento}): ${config.y}`,
-        tipo: "prophet",
-        dados: resultado,
-        parametros: config,
-        classificacao: calcularClassificacaoProphet(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetricsProphet(resultado),
-        categoria: "series_temporais",
-        fonte: resultado.fonte || 'backend'
-      };
-      
+    // Calcular classificação e métricas
+    const classificacao = calcularClassificacaoProphet(resultado);
+    const metrics = extrairMetricsProphet(resultado);
+    
+    const dadosParaDashboard = {
+      nome: nome,
+      tipo: "prophet",
+      dados: resultado,
+      parametros: config,
+      classificacao: classificacao,
+      timestamp: new Date().toISOString(),
+      metrics: metrics,
+      categoria: "series_temporais",
+      fonte: resultado.fonte || 'backend'
+    };
+
+    // 1. Dashboard (SÓ SE EXISTIR)
+    if (onResultadoModelo) {
       onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado Prophet salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
+      console.log('📤 Resultado Prophet salvo no Dashboard:', nome);
     }
+    
+    // 2. 🔥 MONGODB (SEMPRE TENTA)
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: nome,
+      tipo: "prophet",
+      resultado: resultado,
+      parametros: config,
+      classificacao: classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: metrics,
+      qualidade: resultado.metricas || resultado.qualidade || {}
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo Prophet salvo no MongoDB com ID:', salvo.id);
+      console.log(`📊 Classificação: ${classificacao}`);
+      console.log(`📈 MAPE: ${(metrics.mape || 0).toFixed(2)}%`);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+    }
+    
+  } catch (error) {
+    console.error('❌ Erro ao salvar:', error);
+  }
+};
+
+// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO PROPHET (VERSÃO MELHORADA)
+const calcularClassificacaoProphet = (resultado) => {
+  if (!resultado) return "MODERADA";
+  
+  const metricas = resultado.metricas || resultado.qualidade || {};
+  
+  const mape = metricas.mape || 100;
+  const rmse = metricas.rmse || Infinity;
+  const r2 = metricas.r2 || 0;
+  const mad = metricas.mad || Infinity;
+  
+  // Prophet: MAPE e MAD são métricas importantes
+  if (mape < 5 || r2 > 0.95 || mad < 0.05) return "EXCELENTE";
+  if (mape < 10 || r2 > 0.90 || mad < 0.10) return "BOA";
+  if (mape < 15 || r2 > 0.80 || mad < 0.15) return "MODERADA";
+  if (mape < 25 || r2 > 0.70 || mad < 0.25) return "BAIXA";
+  
+  return "MUITO BAIXA";
+};
+
+// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS PROPHET (VERSÃO MELHORADA)
+const extrairMetricsProphet = (resultado) => {
+  if (!resultado) return {};
+  
+  const metricas = resultado.metricas || resultado.qualidade || {};
+  const modeloInfo = resultado.modelo_info || resultado.dados_info || {};
+  const params = resultado.parametros_ajustados || {};
+  
+  return {
+    // Métricas de erro
+    mape: metricas.mape,
+    rmse: metricas.rmse,
+    mae: metricas.mae,
+    mse: metricas.mse,
+    mad: metricas.mad,
+    
+    // Métricas de ajuste
+    r2: metricas.r2,
+    
+    // Componentes do modelo
+    crescimento: params.growth || 'linear',
+    n_changepoints: params.n_changepoints || 25,
+    changepoint_range: params.changepoint_range || 0.8,
+    yearly_seasonality: params.yearly_seasonality || 'auto',
+    weekly_seasonality: params.weekly_seasonality || 'auto',
+    daily_seasonality: params.daily_seasonality || 'auto',
+    seasonality_mode: params.seasonality_mode || 'additive',
+    interval_width: params.interval_width || 0.8,
+    
+    // Informações dos dados
+    n_observacoes: modeloInfo.n_observacoes,
+    n_previsoes: modeloInfo.n_previsoes,
+    frequencia: modeloInfo.frequencia,
+    periodo_inicio: modeloInfo.periodo_inicio,
+    periodo_fim: modeloInfo.periodo_fim,
+    
+    // Componentes extraídos
+    tendencia: resultado.tendencia,
+    sazonalidade_semanal: resultado.sazonalidade_semanal,
+    sazonalidade_anual: resultado.sazonalidade_anual,
+    feriados: resultado.feriados
   };
+};
+
+// 🔥 FUNÇÃO PARA NORMALIZAR RESULTADO PARA EXIBIÇÃO (MANTIDA IGUAL)
+const normalizarResultadoParaExibicao = (modeloCompleto) => {
+  if (!modeloCompleto) return null;
+  
+  if (modeloCompleto.previsoes || modeloCompleto.metricas) {
+    return modeloCompleto;
+  }
+  
+  if (modeloCompleto.resultado) {
+    return modeloCompleto.resultado;
+  }
+  
+  const resultadoData = modeloCompleto.resultado || modeloCompleto;
+  
+  return {
+    previsoes: resultadoData.previsoes || resultadoData.predictions || [],
+    ajustados: resultadoData.ajustados || resultadoData.fitted || [],
+    residuos: resultadoData.residuos || resultadoData.residuals || [],
+    metricas: resultadoData.metricas || resultadoData.metrics || {},
+    interpretacao_tecnica: resultadoData.interpretacao_tecnica || resultadoData.technical_interpretation || {},
+    dados_originais: resultadoData.dados_originais || resultadoData.original_data || {},
+    periodo_previsao: resultadoData.periodo_previsao || resultadoData.forecast_period || {},
+    qualidade_ajuste: resultadoData.qualidade_ajuste || resultadoData.fit_quality || {},
+    modelo_info: resultadoData.modelo_info || resultadoData.model_info || {}
+  };
+};
+
+
+
 
   // Extrair variáveis dos dados
   useEffect(() => {

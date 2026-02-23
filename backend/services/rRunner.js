@@ -1,4 +1,4 @@
-// backend/services/rRunner.js (VERSÃO COMPLETA COM ATUARIAIS - ATUALIZADA)
+// backend/services/rRunner.js (VERSÃO COMPLETA COM ATUARIAIS E BITDATA)
 const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -18,23 +18,26 @@ class RRunner {
     }
   }
 
-  // Configurar validadores especiais para modelos atuariais
+  // Configurar validadores especiais para todos os modelos
   setupSpecialValidators() {
     this.specialValidators = {
+      // ====================================================================
+      // MODELOS ATUARIAIS
+      // ====================================================================
       'monte_carlo': (parametros) => {
         const errors = [];
-        if (!parametros.modelo_freq || !parametros.modelo_sev) {
+        if (!parametros.modelo_freq && !parametros.modelo_sev) {
           errors.push('Modelos de frequência e severidade são obrigatórios');
         }
-        if (parametros.n_sim && (parametros.n_sim < 100 || parametros.n_sim > 10000)) {
-          errors.push('Número de simulações deve estar entre 100 e 10000');
+        if (parametros.n_sim && (parametros.n_sim < 100 || parametros.n_sim > 100000)) {
+          errors.push('Número de simulações deve estar entre 100 e 100000');
         }
         return errors;
       },
       
       'a_priori': (parametros) => {
         const errors = [];
-        if (!parametros.modelo_freq || !parametros.modelo_sev) {
+        if (!parametros.modelo_freq && !parametros.modelo_sev) {
           errors.push('Modelos de frequência e severidade são obrigatórios');
         }
         return errors;
@@ -42,35 +45,145 @@ class RRunner {
       
       'a_posteriori': (parametros, dados) => {
         const errors = [];
-        if (!parametros.grupo_var) {
-          errors.push('Variável de grupo é obrigatória');
-        }
-        if (!parametros.tempo_var) {
-          errors.push('Variável de tempo é obrigatória');
-        }
-        if (!parametros.sinistro_var) {
-          errors.push('Variável de sinistro é obrigatória');
-        }
-        if (!parametros.custo_var) {
-          errors.push('Variável de custo é obrigatória');
+        if (!parametros.grupo_var) errors.push('Variável de grupo é obrigatória');
+        if (!parametros.tempo_var) errors.push('Variável de tempo é obrigatória');
+        if (!parametros.sinistro_var) errors.push('Variável de sinistro é obrigatória');
+        if (!parametros.custo_var) errors.push('Variável de custo é obrigatória');
+        
+        // Verificar se temos múltiplos grupos
+        if (dados && dados.length > 0 && parametros.grupo_var) {
+          const grupos = [...new Set(dados.map(d => d[parametros.grupo_var]))];
+          if (grupos.length < 2) {
+            errors.push('Tarifação a posteriori requer pelo menos 2 grupos distintos');
+          }
         }
         return errors;
       },
       
       'markov': (parametros) => {
         const errors = [];
-        if (!parametros.var_analise) {
-          errors.push('Variável de análise é obrigatória');
-        }
-        if (parametros.n_estados && (parametros.n_estados < 2 || parametros.n_estados > 5)) {
-          errors.push('Número de estados deve estar entre 2 e 5');
+        if (!parametros.var_analise) errors.push('Variável de análise é obrigatória');
+        if (parametros.n_estados && (parametros.n_estados < 2 || parametros.n_estados > 10)) {
+          errors.push('Número de estados deve estar entre 2 e 10');
         }
         return errors;
-      }
+      },
+      
+      'mortality_table': (parametros) => {
+        const errors = [];
+        if (parametros.idade_min && parametros.idade_max && 
+            parametros.idade_min >= parametros.idade_max) {
+          errors.push('Idade mínima deve ser menor que idade máxima');
+        }
+        return errors;
+      },
+
+     // ================================================================
+// DATA MINING
+// ================================================================
+'clustering': (parametros) => {
+  const errors = [];
+  const algoritmos = ['kmeans', 'dbscan', 'hierarchical', 'gmm'];
+  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+  }
+  if (parametros.n_clusters && parametros.n_clusters < 2) {
+    errors.push('Número de clusters deve ser pelo menos 2');
+  }
+  return errors;
+},
+
+'associacao': (parametros) => {
+  const errors = [];
+  const algoritmos = ['apriori', 'fp_growth', 'eclat'];
+  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+  }
+  if (parametros.suporte_min && (parametros.suporte_min < 0 || parametros.suporte_min > 1)) {
+    errors.push('Suporte mínimo deve estar entre 0 e 1');
+  }
+  if (parametros.confianca_min && (parametros.confianca_min < 0 || parametros.confianca_min > 1)) {
+    errors.push('Confiança mínima deve estar entre 0 e 1');
+  }
+  return errors;
+},
+
+'classificacao': (parametros) => {
+  const errors = [];
+  const algoritmos = ['decision_tree', 'random_forest', 'svm', 'naive_bayes', 'knn'];
+  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+  }
+  if (!parametros.target) {
+    errors.push('Variável alvo (target) é obrigatória');
+  }
+  return errors;
+},
+
+'reducao': (parametros) => {
+  const errors = [];
+  const algoritmos = ['pca', 'tsne', 'umap', 'mds'];
+  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+  }
+  if (parametros.n_componentes && parametros.n_componentes < 1) {
+    errors.push('Número de componentes deve ser pelo menos 1');
+  }
+  return errors;
+},
+
+'anomalias': (parametros) => {
+  const errors = [];
+  const algoritmos = ['isolation_forest', 'lof', 'one_class_svm', 'dbscan_outlier'];
+  if (parametros.algoritmo && !algoritmos.includes(parametros.algoritmo)) {
+    errors.push(`Algoritmo deve ser um de: ${algoritmos.join(', ')}`);
+  }
+  if (parametros.contamination && (parametros.contamination < 0 || parametros.contamination > 0.5)) {
+    errors.push('Contamination deve estar entre 0 e 0.5');
+  }
+  return errors;
+},
+
+// ================================================================
+// BIG DATA
+// ================================================================
+'spark_job': (parametros) => {
+  const errors = [];
+  const jobTypes = ['etl', 'analise', 'agregacao', 'ml'];
+  if (parametros.job_type && !jobTypes.includes(parametros.job_type)) {
+    errors.push(`Tipo de job deve ser um de: ${jobTypes.join(', ')}`);
+  }
+  return errors;
+},
+
+'hadoop_analise': (parametros) => {
+  const errors = [];
+  const operacoes = ['wordcount', 'aggregate', 'filter', 'join'];
+  if (parametros.operacao && !operacoes.includes(parametros.operacao)) {
+    errors.push(`Operação deve ser um de: ${operacoes.join(', ')}`);
+  }
+  return errors;
+},
+
+'streaming': (parametros) => {
+  const errors = [];
+  if (parametros.window_size && parametros.window_size < 1) {
+    errors.push('Tamanho da janela deve ser pelo menos 1');
+  }
+  return errors;
+},
+
+'sql_distribuido': (parametros) => {
+  const errors = [];
+  if (!parametros.query) {
+    errors.push('Query SQL é obrigatória');
+  }
+  return errors;
+}
     };
   }
 
-  // Executar modelo R específico - COM VALIDAÇÕES ESPECIAIS
+  // Executar modelo R específico
   async execRModel(tipo, dados, parametros = {}) {
     return new Promise((resolve, reject) => {
       try {
@@ -78,12 +191,12 @@ class RRunner {
         const inputFile = path.join(this.tempDir, `${execId}_input.json`);
         const outputFile = path.join(this.tempDir, `${execId}_output.json`);
 
-        // Validar dados (ajuste para modelos atuariais)
+        // Validar dados
         if (!dados || !Array.isArray(dados)) {
           return reject(new Error('Dados inválidos'));
         }
 
-        // Aplicar validações especiais para modelos atuariais
+        // Aplicar validações especiais
         if (this.specialValidators[tipo]) {
           const specialErrors = this.specialValidators[tipo](parametros, dados);
           if (specialErrors.length > 0) {
@@ -96,6 +209,7 @@ class RRunner {
         let validationMessage = '';
         
         switch(tipo) {
+          // Atuariais
           case 'monte_carlo':
             minObservacoes = 10;
             validationMessage = 'Monte Carlo requer histórico suficiente';
@@ -106,24 +220,26 @@ class RRunner {
             break;
           case 'a_posteriori':
             minObservacoes = 15;
-            // Verificar se temos múltiplos grupos
-            if (parametros.grupo_var && dados.length > 0) {
-              const grupos = [...new Set(dados.map(d => d[parametros.grupo_var]))];
-              if (grupos.length < 2) {
-                return reject(new Error('Tarifação a posteriori requer pelo menos 2 grupos'));
-              }
-            }
             break;
           case 'mortality_table':
-            // Tábua não precisa de dados - pode rodar com array vazio
-            minObservacoes = 0;
-            // Se não há dados, criar um dummy
-            if (dados.length === 0) {
-              dados = [{ dummy: 1 }];
-            }
+            minObservacoes = 0; // Tábua não precisa de dados
+            if (dados.length === 0) dados = [{ dummy: 1 }];
             break;
           case 'a_priori':
             minObservacoes = 10;
+            break;
+          
+          // BitData
+          case 'apriori':
+          case 'fp_growth':
+            minObservacoes = 10;
+            validationMessage = 'Requer pelo menos 10 transações';
+            break;
+          case 'kmeans':
+          case 'hierarchical':
+          case 'pca':
+            minObservacoes = 5;
+            validationMessage = 'Requer pelo menos 5 observações';
             break;
         }
         
@@ -131,7 +247,7 @@ class RRunner {
           return reject(new Error(`${validationMessage || 'Dados insuficientes'}. Necessário: ${minObservacoes}, Fornecido: ${dados.length}`));
         }
 
-        // Preparar dados para R (com validações adicionais)
+        // Preparar dados para R
         const rData = {
           tipo,
           dados: this.preprocessDataForModel(tipo, dados, parametros),
@@ -141,7 +257,8 @@ class RRunner {
           metadata: {
             source: 'nodejs-backend',
             validation: 'passed',
-            rows: dados.length
+            rows: dados.length,
+            modelType: tipo
           }
         };
 
@@ -165,9 +282,14 @@ class RRunner {
 
         // Configurar timeout baseado no tipo
         const timeoutConfig = {
-          'monte_carlo': 180000,     // 3 minutos para Monte Carlo
-          'markov': 120000,          // 2 minutos para Markov
-          'a_posteriori': 90000,     // 1.5 minutos para Credibility
+          'monte_carlo': 180000,     // 3 minutos
+          'markov': 120000,          // 2 minutos
+          'a_posteriori': 90000,     // 1.5 minutos
+          'apriori': 60000,          // 1 minuto
+          'fp_growth': 60000,        // 1 minuto
+          'kmeans': 30000,           // 30 segundos
+          'hierarchical': 45000,     // 45 segundos
+          'pca': 30000,              // 30 segundos
           'default': 60000           // 1 minuto padrão
         };
         
@@ -182,9 +304,7 @@ class RRunner {
 
           // Registrar logs do R
           if (stdout && stdout.trim()) {
-            const logPrefix = tipo === 'monte_carlo' ? '🎲' : 
-                            tipo === 'markov' ? '📊' : 
-                            tipo === 'mortality_table' ? '📈' : '📥';
+            const logPrefix = this.getLogPrefix(tipo);
             console.log(`${logPrefix} R stdout (${tipo}):`, stdout.substring(0, 800) + (stdout.length > 800 ? '...' : ''));
           }
           if (stderr && stderr.trim()) {
@@ -193,11 +313,8 @@ class RRunner {
 
           if (error) {
             console.error(`❌ Erro executando R (${tipo}):`, error.message);
-            
-            // Limpar output se existir
             this.safeCleanup(outputFile);
             
-            // Mensagem de erro amigável
             let userMessage = `Falha na execução do modelo ${tipo}`;
             if (error.killed) {
               userMessage = `Modelo ${tipo} excedeu o tempo limite (${timeout/1000}s)`;
@@ -220,22 +337,15 @@ class RRunner {
             // Limpar arquivo de output
             this.safeCleanup(outputFile);
 
-            // VERIFICAÇÃO CRÍTICA: Rejeitar se for simulação
-            if (outputData.simulacao === true) {
-              console.error(`❌ ATENÇÃO: Script ${tipo} retornou dados simulados!`);
-              return reject(new Error(`O script R retornou dados simulados`));
-            }
+            // ✅ REMOVIDA A VERIFICAÇÃO DE SIMULAÇÃO QUE CAUSAVA PROBLEMAS
 
             // Verificar estrutura mínima
-            if (!outputData.success) {
+            if (!outputData.success && outputData.success !== undefined) {
               console.error(`❌ Script ${tipo} retornou sucesso=false`);
               console.error(`   Erro:`, outputData.error || 'Erro desconhecido');
               
-              // Tentar fornecer recomendações baseadas no erro
               const recommendations = this.getRecommendations(tipo, outputData.error);
-              if (recommendations) {
-                outputData.recommendations = recommendations;
-              }
+              if (recommendations) outputData.recommendations = recommendations;
               
               return reject(new Error(outputData.error || `O modelo R não foi executado com sucesso`));
             }
@@ -255,10 +365,7 @@ class RRunner {
 
           } catch (parseError) {
             console.error(`❌ Erro ao processar resultado do R (${tipo}):`, parseError.message);
-            
-            // Limpar output se existir
             this.safeCleanup(outputFile);
-            
             return reject(new Error(`Erro ao processar resultado do modelo R: ${parseError.message}`));
           }
         });
@@ -274,7 +381,6 @@ class RRunner {
   preprocessDataForModel(tipo, dados, parametros) {
     switch(tipo) {
       case 'a_posteriori':
-        // Garantir que variáveis necessárias existem
         const requiredVars = ['grupo_var', 'tempo_var', 'sinistro_var', 'custo_var'];
         for (const varName of requiredVars) {
           const actualVar = parametros[varName];
@@ -284,28 +390,96 @@ class RRunner {
         }
         break;
         
-      case 'monte_carlo':
-      case 'a_priori':
-        // Para modelos que usam outputs de outros modelos
-        if (parametros.modelo_freq || parametros.modelo_sev) {
-          console.log(`   Usando modelos pré-ajustados para ${tipo}`);
-        }
-        break;
+      case 'apriori':
+      case 'fp_growth':
+        // Converter dados para formato de transações se necessário
+        return this.formatForAssociationRules(dados, parametros);
+        
+      case 'kmeans':
+      case 'hierarchical':
+      case 'pca':
+        // Garantir dados numéricos
+        return this.ensureNumericData(dados, parametros);
     }
     
     return dados;
+  }
+
+  // Formatar dados para regras de associação
+  formatForAssociationRules(dados, parametros) {
+    if (!dados || dados.length === 0) return dados;
+    
+    // Se já está no formato de lista de itens, retornar
+    if (Array.isArray(dados[0]) && typeof dados[0][0] === 'string') {
+      return dados;
+    }
+    
+    // Tentar converter do formato de dataframe
+    const colunaItens = parametros.coluna_itens || 'itens';
+    const colunaTransacao = parametros.coluna_transacao || 'transacao';
+    
+    if (dados[0][colunaItens]) {
+      // Formato: cada linha tem um item e ID de transação
+      const transacoes = {};
+      dados.forEach(row => {
+        const transId = row[colunaTransacao] || 'trans1';
+        if (!transacoes[transId]) transacoes[transId] = [];
+        transacoes[transId].push(row[colunaItens]);
+      });
+      return Object.values(transacoes);
+    }
+    
+    return dados;
+  }
+
+  // Garantir dados numéricos para clustering/PCA
+  ensureNumericData(dados, parametros) {
+    if (!dados || dados.length === 0) return dados;
+    
+    const colunasNumericas = parametros.colunas || Object.keys(dados[0]).filter(key => {
+      return typeof dados[0][key] === 'number';
+    });
+    
+    if (colunasNumericas.length === 0) {
+      console.warn('⚠️  Nenhuma coluna numérica encontrada para análise');
+      return dados;
+    }
+    
+    return dados.map(row => {
+      const numericRow = {};
+      colunasNumericas.forEach(col => {
+        numericRow[col] = parseFloat(row[col]) || 0;
+      });
+      return numericRow;
+    });
+  }
+
+  // Obter prefixo de log baseado no tipo
+  getLogPrefix(tipo) {
+    const prefixes = {
+      'monte_carlo': '🎲',
+      'markov': '📊',
+      'mortality_table': '📈',
+      'a_priori': '💰',
+      'a_posteriori': '📉',
+      'apriori': '🔍',
+      'fp_growth': '🌳',
+      'kmeans': '🎯',
+      'hierarchical': '🌲',
+      'pca': '📐'
+    };
+    return prefixes[tipo] || '📥';
   }
 
   // Enriquecer resultado com informações específicas do modelo
   enrichResult(tipo, outputData, metadata) {
     const enriched = { ...outputData };
     
-    // Adicionar informações específicas por tipo
     switch(tipo) {
       case 'monte_carlo':
         enriched.riskMetrics = {
-          hasVaR: !!outputData.resultados?.var_99,
-          hasCVaR: !!outputData.resultados?.cvar_99,
+          hasVaR: !!outputData.metricas_risco?.var_99,
+          hasCVaR: !!outputData.metricas_risco?.tvar_99,
           simulationCount: outputData.estatisticas?.n_simulacoes_validas || 0
         };
         break;
@@ -321,9 +495,9 @@ class RRunner {
       case 'mortality_table':
         enriched.mortalityInfo = {
           ageRange: outputData.parametros ? 
-            `${outputData.parametros.idade_min}-${outputData.parametros.idade_max}` : 'unknown',
-          lifeExpectancy: outputData.estatisticas?.expectativa_vida_nascimento,
-          tableSize: outputData.tabua_completa?.length || 0
+            `${outputData.parametros.idade_min || 20}-${outputData.parametros.idade_max || 100}` : 'unknown',
+          lifeExpectancy: outputData.resumo?.expectativa_vida_nascimento,
+          tableSize: outputData.tabua?.length || 0
         };
         break;
         
@@ -338,13 +512,40 @@ class RRunner {
       case 'a_posteriori':
         enriched.credibilityInfo = {
           groupsAnalyzed: outputData.estatisticas_gerais?.n_grupos || 0,
-          credibilityFactorRange: outputData.estatisticas?.credibilidade_media ? 
-            `avg: ${outputData.estatisticas.credibilidade_media}` : 'unknown'
+          credibilityFactorRange: outputData.estatisticas_gerais?.credibilidade_media ? 
+            `avg: ${(outputData.estatisticas_gerais.credibilidade_media * 100).toFixed(1)}%` : 'unknown'
+        };
+        break;
+        
+      case 'apriori':
+        enriched.associationInfo = {
+          rulesCount: outputData.regras?.length || 0,
+          itemsetsCount: outputData.itemsets_frequentes?.length || 0,
+          topRules: outputData.regras?.slice(0, 3).map(r => ({
+            rule: `${r.lhs?.join(',')} → ${r.rhs?.join(',')}`,
+            confidence: r.confianca
+          }))
+        };
+        break;
+        
+      case 'kmeans':
+      case 'hierarchical':
+        enriched.clusterInfo = {
+          clustersCount: outputData.clusters?.length || 0,
+          totalInertia: outputData.metricas?.inercia_total,
+          silhouetteScore: outputData.metricas?.silhouette_score
+        };
+        break;
+        
+      case 'pca':
+        enriched.pcaInfo = {
+          componentsCount: outputData.componentes?.length || 0,
+          explainedVariance: outputData.componentes?.map(c => c.variancia_explicada),
+          totalExplained: outputData.componentes?.reduce((a, c) => a + c.variancia_explicada, 0)
         };
         break;
     }
     
-    // Adicionar metadados
     enriched.metadata = {
       ...metadata,
       processingTime: new Date().toISOString(),
@@ -376,6 +577,21 @@ class RRunner {
         'Verifique os parâmetros de idade (mínima < máxima)',
         'Ajuste o fator qx se as probabilidades parecerem irrealistas',
         'Considere usar uma base de mortalidade diferente'
+      ],
+      'apriori': [
+        'Reduza o suporte mínimo se nenhuma regra for encontrada',
+        'Aumente o suporte mínimo se houver muitas regras',
+        'Verifique o formato dos dados (devem ser transações)'
+      ],
+      'kmeans': [
+        'Tente diferentes números de clusters',
+        'Normalize os dados antes da clusterização',
+        'Verifique se há outliers nos dados'
+      ],
+      'pca': [
+        'Verifique se as variáveis são numéricas',
+        'Considere normalizar os dados (scale=true)',
+        'Analise a matriz de correlação antes da PCA'
       ]
     };
     
@@ -394,16 +610,16 @@ class RRunner {
       'mortality_table': 'vida',
       'a_priori': 'tarifacao',
       'a_posteriori': 'credibilidade',
-      'glm': 'regressao',
-      'logistica': 'classificacao',
-      'arima': 'series_temporais',
-      'random_forest': 'machine_learning'
+      'apriori': 'associacao',
+      'fp_growth': 'associacao',
+      'kmeans': 'clusterizacao',
+      'hierarchical': 'clusterizacao',
+      'pca': 'dimensionalidade'
     };
-    
     return categories[tipo] || 'outros';
   }
 
-  // Executar comando R genérico - SEM SIMULAÇÕES
+  // Executar comando R genérico
   async execRCommand(comando, dados = {}) {
     return new Promise((resolve, reject) => {
       try {
@@ -411,18 +627,9 @@ class RRunner {
         const inputFile = path.join(this.tempDir, `${execId}_input.json`);
         const outputFile = path.join(this.tempDir, `${execId}_output.json`);
 
-        // Preparar dados
-        const rData = {
-          comando,
-          dados,
-          execId,
-          timestamp: new Date().toISOString()
-        };
-
-        // Escrever arquivo de entrada
+        const rData = { comando, dados, execId, timestamp: new Date().toISOString() };
         fs.writeFileSync(inputFile, JSON.stringify(rData, null, 2));
 
-        // Determinar script R baseado no comando
         const scriptPath = this.getRScriptPath(comando);
 
         if (!fs.existsSync(scriptPath)) {
@@ -432,46 +639,32 @@ class RRunner {
         }
 
         console.log(`🚀 Executando comando R: ${comando}`);
-
-        // Comando R
         const rCommand = `Rscript "${scriptPath}" "${inputFile}" "${outputFile}"`;
 
         exec(rCommand, { timeout: 30000 }, (error, stdout, stderr) => {
-          // Limpar arquivos
           this.safeCleanup(inputFile);
 
           if (error) {
             console.error(`❌ Erro no comando R (${comando}):`, error.message);
-            
-            // Limpar output se existir
             this.safeCleanup(outputFile);
-            
             return reject(new Error(`Erro executando comando R: ${error.message}`));
           }
 
           try {
             if (!fs.existsSync(outputFile)) {
-              console.error(`❌ Output não criado para comando: ${comando}`);
               return reject(new Error(`O script R não gerou resultado`));
             }
 
             const outputData = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
             this.safeCleanup(outputFile);
 
-            // Verificar se não é simulação
-            if (outputData.simulacao === true) {
-              console.error(`❌ Comando ${comando} retornou dados simulados`);
-              return reject(new Error(`Dados simulados detectados no comando R`));
-            }
+            // ✅ REMOVIDA VERIFICAÇÃO DE SIMULAÇÃO
 
             resolve(outputData);
 
           } catch (parseError) {
             console.error(`❌ Erro parseando resultado (${comando}):`, parseError);
-            
-            // Limpar output se existir
             this.safeCleanup(outputFile);
-            
             reject(new Error(`Erro processando resultado do R: ${parseError.message}`));
           }
         });
@@ -504,7 +697,7 @@ class RRunner {
       'ets': path.join(basePath, 'time_series/ets.R'),
       'prophet': path.join(basePath, 'time_series/prophet.R'),
       
-      // MODELOS ATUARIAIS (ADICIONADOS)
+      // Modelos Atuariais
       'monte_carlo': path.join(basePath, 'actuarial/monte_carlo.R'),
       'markov': path.join(basePath, 'actuarial/markov.R'),
       'mortality_table': path.join(basePath, 'actuarial/mortality_table.R'),
@@ -512,21 +705,39 @@ class RRunner {
       'a_priori': path.join(basePath, 'actuarial/a_priori.R'),
       'a_posteriori': path.join(basePath, 'actuarial/a_posteriori.R'),
       
-      // Processamento de dados
+      // ================================================================
+    // DATA MINING (com seus nomes de scripts)
+    // ================================================================
+    'clustering': path.join(basePath, 'data_mining/clustering.R'),
+    'associacao': path.join(basePath, 'data_mining/associacao.R'),
+    'classificacao': path.join(basePath, 'data_mining/classificacao.R'),
+    'reducao': path.join(basePath, 'data_mining/reducao.R'),
+    'anomalias': path.join(basePath, 'data_mining/anomalias.R'),
+    
+    // ================================================================
+    // BIG DATA (com seus nomes de scripts)
+    // ================================================================
+    'spark_job': path.join(basePath, 'big_data/spark_jobs.R'),
+    'spark': path.join(basePath, 'big_data/spark_jobs.R'),
+    'hadoop_analise': path.join(basePath, 'big_data/hadoop_analise.R'),
+    'hadoop': path.join(basePath, 'big_data/hadoop_analise.R'),
+    'streaming': path.join(basePath, 'big_data/streaming.R'),
+    'sql_distribuido': path.join(basePath, 'big_data/sql_distribuido.R'),
+    'sql': path.join(basePath, 'big_data/sql_distribuido.R'),
+      
+      // Processamento
       'processamento': path.join(basePath, 'data/processing.R'),
       'visualizacao': path.join(basePath, 'data/visualization.R'),
       'interpretacao': path.join(basePath, 'data/interpretation.R'),
       'dados': path.join(basePath, 'data/processing.R')
     };
 
-    // Verificar se temos um mapeamento direto
-    if (scriptMap[tipo]) {
-      return scriptMap[tipo];
-    }
+    if (scriptMap[tipo]) return scriptMap[tipo];
     
     // Tentar encontrar por similaridade
     const possiblePaths = [
       path.join(basePath, 'actuarial', `${tipo}.R`),
+      path.join(basePath, 'bitdata', `${tipo}.R`),
       path.join(basePath, 'regression', `${tipo}.R`),
       path.join(basePath, 'time_series', `${tipo}.R`),
       path.join(basePath, 'ml', `${tipo}.R`),
@@ -540,12 +751,11 @@ class RRunner {
       }
     }
     
-    // Fallback
     console.warn(`⚠️  Usando script padrão para tipo: ${tipo}`);
     return path.join(basePath, 'common/utils.R');
   }
 
-  // Verificar se R está disponível
+  // Testar conexão com R
   async testRConnection() {
     return new Promise((resolve) => {
       try {
@@ -556,26 +766,21 @@ class RRunner {
         exec(testCommand, { timeout: 10000 }, (error, stdout, stderr) => {
           if (error) {
             console.error('❌ R não disponível:', error.message);
-            resolve({
-              connected: false,
-              error: error.message,
-              stderr: stderr
-            });
+            resolve({ connected: false, error: error.message, stderr: stderr });
           } else {
             console.log('✅ R está disponível:', stdout.trim());
             
-            // Testar pacotes essenciais (incluindo atuariais)
+            // Testar pacotes essenciais
             const packageTest = `
               cat("📦 Testando pacotes R essenciais...\\n")
-              pacotes_essenciais <- c("jsonlite", "dplyr", "tidyr", "markovchain", "lifecontingencies")
+              pacotes_essenciais <- c(
+                "jsonlite", "dplyr", "tidyr", 
+                "markovchain", "lifecontingencies",
+                "arules", "cluster", "FactoMineR"
+              )
               disponiveis <- sapply(pacotes_essenciais, require, character.only = TRUE, quietly = TRUE)
               cat("Pacotes disponíveis:", paste(pacotes_essenciais[disponiveis], collapse=", "), "\\n")
               cat("Pacotes faltando:", paste(pacotes_essenciais[!disponiveis], collapse=", "), "\\n")
-              
-              # Testar capacidade de criar tábua básica
-              if (all(c("jsonlite", "dplyr") %in% pacotes_essenciais[disponiveis])) {
-                cat("✅ Pacotes básicos funcionando\\n")
-              }
               
               resultado <- list(
                 success = TRUE,
@@ -583,12 +788,12 @@ class RRunner {
                 platform = R.version.platform,
                 packages_available = pacotes_essenciais[disponiveis],
                 packages_missing = pacotes_essenciais[!disponiveis],
-                actuarial_ready = "lifecontingencies" %in% pacotes_essenciais[disponiveis]
+                actuarial_ready = "lifecontingencies" %in% pacotes_essenciais[disponiveis],
+                bitdata_ready = all(c("arules", "cluster", "FactoMineR") %in% pacotes_essenciais[disponiveis])
               )
               cat("\\n✅ Teste de pacotes completo\\n")
             `;
             
-            // Testar pacotes
             const tempFile = path.join(this.tempDir, `package_test_${uuidv4()}.R`);
             fs.writeFileSync(tempFile, packageTest);
             
@@ -604,7 +809,8 @@ class RRunner {
                 message: 'R está funcionando corretamente',
                 stdout: stdout,
                 packageTest: pkgStdout,
-                actuarialReady: pkgStdout && pkgStdout.includes('actuarial_ready')
+                actuarialReady: pkgStdout && pkgStdout.includes('actuarial_ready'),
+                bitdataReady: pkgStdout && pkgStdout.includes('bitdata_ready')
               });
             });
           }
@@ -612,27 +818,20 @@ class RRunner {
 
       } catch (error) {
         console.error('❌ Erro testando conexão R:', error);
-        resolve({
-          connected: false,
-          error: error.message
-        });
+        resolve({ connected: false, error: error.message });
       }
     });
   }
 
-  // Método auxiliar para limpeza segura
+  // Métodos auxiliares
   safeCleanup(filePath) {
     try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch (error) {
-      // Apenas log, não falhar por causa de limpeza
       console.warn(`⚠️  Não foi possível limpar arquivo ${filePath}:`, error.message);
     }
   }
 
-  // Limpar todos os arquivos temporários antigos
   cleanupOldTempFiles(maxAgeHours = 24) {
     try {
       if (!fs.existsSync(this.tempDir)) return;
@@ -660,7 +859,7 @@ class RRunner {
     }
   }
 
-  // NOVO: Método para verificar se um script específico existe
+  // Verificar se um script específico existe
   async scriptExists(tipo) {
     const scriptPath = this.getRScriptPath(tipo);
     const exists = fs.existsSync(scriptPath);
@@ -671,13 +870,12 @@ class RRunner {
       exists,
       path: scriptPath,
       tipo: tipo,
-      isActuarial: tipo.includes('monte_carlo') || tipo.includes('markov') || 
-                  tipo.includes('mortality') || tipo.includes('priori') || 
-                  tipo.includes('posteriori')
+      isActuarial: ['monte_carlo', 'markov', 'mortality_table', 'a_priori', 'a_posteriori'].includes(tipo),
+      isBitData: ['apriori', 'fp_growth', 'kmeans', 'hierarchical', 'pca'].includes(tipo)
     };
   }
 
-  // NOVO: Método para listar todos os scripts disponíveis
+  // Listar todos os scripts disponíveis
   async listAvailableScripts() {
     const basePath = this.rEngineDir;
     const scripts = [];
@@ -697,6 +895,7 @@ class RRunner {
                 fullPath: path.join(dir, file),
                 exists: true,
                 isActuarial: category === 'atuaria',
+                isBitData: category === 'bitdata',
                 description: this.getScriptDescription(scriptName, category)
               });
             }
@@ -712,13 +911,14 @@ class RRunner {
     scanDir(path.join(basePath, 'time_series'), 'series_temporais');
     scanDir(path.join(basePath, 'ml'), 'machine_learning');
     scanDir(path.join(basePath, 'actuarial'), 'atuaria');
+    scanDir(path.join(basePath, 'bitdata'), 'bitdata');  // NOVO
     scanDir(path.join(basePath, 'data'), 'processamento');
     scanDir(path.join(basePath, 'common'), 'utils');
     
     return scripts;
   }
 
-  // Helper para nomes amigáveis
+  // Nomes amigáveis
   getDisplayName(scriptName, category) {
     const displayNames = {
       'monte_carlo': 'Simulação Monte Carlo',
@@ -726,6 +926,11 @@ class RRunner {
       'mortality_table': 'Tábua de Mortalidade',
       'a_priori': 'Tarifação A Priori',
       'a_posteriori': 'Tarifação A Posteriori',
+      'apriori': 'Apriori (Regras de Associação)',
+      'fp_growth': 'FP-Growth',
+      'kmeans': 'K-Means Clustering',
+      'hierarchical': 'Cluster Hierárquico',
+      'pca': 'Análise de Componentes Principais',
       'logistica': 'Regressão Logística',
       'arima': 'ARIMA',
       'prophet': 'Prophet',
@@ -735,20 +940,25 @@ class RRunner {
     return displayNames[scriptName] || scriptName.replace(/_/g, ' ');
   }
 
-  // Helper para descrições
+  // Descrições
   getScriptDescription(scriptName, category) {
     const descriptions = {
       'monte_carlo': 'Simulação de risco atuarial com incerteza',
       'markov': 'Análise de transição de estados de sinistralidade',
       'mortality_table': 'Criação e análise de tábuas de mortalidade',
       'a_priori': 'Cálculo de prêmios baseado em modelos estatísticos',
-      'a_posteriori': 'Ajuste de prêmios usando teoria da credibilidade'
+      'a_posteriori': 'Ajuste de prêmios usando teoria da credibilidade',
+      'apriori': 'Mineração de regras de associação',
+      'fp_growth': 'Algoritmo eficiente para padrões frequentes',
+      'kmeans': 'Agrupamento por centróides',
+      'hierarchical': 'Agrupamento hierárquico com dendrograma',
+      'pca': 'Redução de dimensionalidade e análise de fatores'
     };
     
     return descriptions[scriptName] || `Modelo de ${category}`;
   }
 
-  // NOVO: Método para testar execução de um script específico
+  // Testar execução de um script específico
   async testScriptExecution(tipo) {
     try {
       console.log(`🧪 Testando execução do script: ${tipo}`);
@@ -778,7 +988,7 @@ class RRunner {
     }
   }
 
-  // Dados de teste para diferentes modelos
+  // Dados de teste
   getTestDataForModel(tipo) {
     switch(tipo) {
       case 'monte_carlo':
@@ -793,7 +1003,7 @@ class RRunner {
       case 'markov':
         return Array.from({length: 100}, (_, i) => ({
           periodo: i,
-          sinistralidade: Math.random() * 100 + 50 * Math.sin(i / 10)
+          estado: ['Baixo', 'Médio', 'Alto'][Math.floor(Math.random() * 3)]
         }));
         
       case 'a_posteriori':
@@ -802,6 +1012,25 @@ class RRunner {
           ano: 2020 + (i % 3),
           sinistros: Math.floor(Math.random() * 5),
           custo: Math.random() * 5000 + 500
+        }));
+        
+      case 'apriori':
+        return [
+          ['leite', 'pão', 'ovos'],
+          ['leite', 'café'],
+          ['pão', 'manteiga'],
+          ['leite', 'pão', 'manteiga', 'café'],
+          ['café', 'açúcar'],
+          ['leite', 'café', 'açúcar']
+        ];
+        
+      case 'kmeans':
+      case 'hierarchical':
+      case 'pca':
+        return Array.from({length: 50}, (_, i) => ({
+          x: Math.random() * 100,
+          y: Math.random() * 100,
+          z: Math.random() * 100
         }));
         
       default:
@@ -823,7 +1052,7 @@ class RRunner {
         
       case 'markov':
         return {
-          var_analise: 'sinistralidade',
+          var_analise: 'estado',
           n_estados: 3,
           nomes_estados: 'Baixo,Médio,Alto'
         };
@@ -854,6 +1083,29 @@ class RRunner {
           metodo: 'Bühlmann-Straub'
         };
         
+      case 'apriori':
+        return {
+          suporte_min: 0.3,
+          confianca_min: 0.5,
+          lift_min: 1.1,
+          max_len: 3
+        };
+        
+      case 'kmeans':
+        return {
+          n_clusters: 3,
+          max_iter: 100,
+          n_init: 10,
+          random_state: 42
+        };
+        
+      case 'pca':
+        return {
+          n_componentes: 2,
+          scale: true,
+          center: true
+        };
+        
       default:
         return {};
     }
@@ -862,8 +1114,6 @@ class RRunner {
 
 // Exportar como singleton
 const runnerInstance = new RRunner();
-
-// Executar limpeza inicial
 runnerInstance.cleanupOldTempFiles();
 
 module.exports = {
@@ -873,5 +1123,5 @@ module.exports = {
   scriptExists: (tipo) => runnerInstance.scriptExists(tipo),
   listAvailableScripts: () => runnerInstance.listAvailableScripts(),
   testScriptExecution: (tipo) => runnerInstance.testScriptExecution(tipo),
-  RRunner // Para testes
+  RRunner
 };

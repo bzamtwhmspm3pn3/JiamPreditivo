@@ -1,45 +1,84 @@
-import React, { createContext, useState } from 'react';
+// src/contexts/AuthContext.jsx
+import React, { createContext, useState, useEffect } from 'react';
+import apiClient from '../services/apiClient';
+import { getSession, logout as authLogout } from '../services/auth';
 
-// Cria o contexto
 export const AuthContext = createContext();
 
-// Componente provedor do contexto
 export const AuthProvider = ({ children }) => {
-  // Estado do usuário e token
   const [usuario, setUsuario] = useState(null);
   const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Função de login: recebe objeto { usuario, token }
-  const login = ({ usuario, token }) => {
-    setUsuario(usuario);
-    setToken(token);
-    // opcional: salvar no localStorage para persistência
-    localStorage.setItem("usuario", JSON.stringify(usuario));
-    localStorage.setItem("token", token);
+  useEffect(() => {
+    inicializarAuth();
+  }, []);
+
+  const inicializarAuth = () => {
+    const session = getSession();
+    if (session?.token && session?.user) {
+      setUsuario(session.user);
+      setToken(session.token);
+      apiClient.setToken(session.token);
+    }
+    setLoading(false);
   };
 
-  // Função de logout
+  const login = async (credentials) => {
+    try {
+      const data = await apiClient.login(credentials);
+      if (data.success && data.token && data.user) {
+        setUsuario(data.user);
+        setToken(data.token);
+        apiClient.setToken(data.token);
+        
+        // Salvar no localStorage via auth.js
+        const session = {
+          token: data.token,
+          user: data.user,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('jiam_user_session', JSON.stringify(session));
+      }
+      return data;
+    } catch (error) {
+      console.error('Erro no login:', error);
+      return { success: false, message: error.message };
+    }
+  };
+
   const logout = () => {
     setUsuario(null);
     setToken(null);
-    localStorage.removeItem("usuario");
-    localStorage.removeItem("token");
+    apiClient.removeToken();
+    authLogout(); // limpa localStorage
   };
 
-  // Função para inicializar estado a partir do localStorage
-  const inicializarAuth = () => {
-    const storedUsuario = localStorage.getItem("usuario");
-    const storedToken = localStorage.getItem("token");
-    if (storedUsuario && storedToken) {
-      setUsuario(JSON.parse(storedUsuario));
-      setToken(storedToken);
+  const updateUser = (userData) => {
+    setUsuario(prev => ({ ...prev, ...userData }));
+    
+    // Atualizar na sessão
+    const session = getSession();
+    if (session) {
+      const newSession = {
+        ...session,
+        user: { ...session.user, ...userData }
+      };
+      localStorage.setItem('jiam_user_session', JSON.stringify(newSession));
     }
   };
 
   return (
-    <AuthContext.Provider value={{ usuario, token, login, logout, inicializarAuth }}>
+    <AuthContext.Provider value={{
+      usuario,
+      token,
+      loading,
+      login,
+      logout,
+      updateUser,
+      isAuthenticated: !!token
+    }}>
       {children}
     </AuthContext.Provider>
   );
 };
-

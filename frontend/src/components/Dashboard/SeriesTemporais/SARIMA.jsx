@@ -12,6 +12,7 @@ import Badge from '../componentes/Badge';
 
 // Componentes de Resultados
 import ResultadoSeriesTemporais from '../resultados/ResultadoSeriesTemporais';
+import ModelosService from '../../../services/modelosService';
 
 // Função para extrair dados do objeto
 const extrairDadosArray = (dadosObj) => {
@@ -287,36 +288,7 @@ const executarFallbackLocalSARIMA = (dadosArray, variavelY, variavelData, config
   }
 };
 
-// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO SARIMA
-const calcularClassificacaoSARIMA = (resultado) => {
-  if (!resultado) return "MODERADA";
-  
-  const mape = resultado.metricas?.mape || 20;
-  const r2 = resultado.metricas?.r2 || 0;
-  
-  if (mape < 10 || r2 > 0.9) return "ALTA";
-  if (mape < 20 || r2 > 0.8) return "MODERADA";
-  if (mape < 30 || r2 > 0.7) return "BAIXA";
-  return "MUITO BAIXA";
-};
 
-// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS SARIMA
-const extrairMetricsSARIMA = (resultado) => {
-  if (!resultado) return {};
-  
-  return {
-    mape: resultado.metricas?.mape,
-    rmse: resultado.metricas?.rmse,
-    mae: resultado.metricas?.mae,
-    r2: resultado.metricas?.r2,
-    aic: resultado.metricas?.aic,
-    bic: resultado.metricas?.bic,
-    configuracao: resultado.configuracao_modelo,
-    n_observacoes: resultado.dados_info?.n_observacoes,
-    frequencia: resultado.dados_info?.frequencia,
-    sazonalidade: resultado.dados_info?.sazonalidade
-  };
-};
 
 export default function SARIMA({ dados, onSaveModel, modelosAjustados, onVoltar, statusSistema, onResultadoModelo }) {
   const [variaveis, setVariaveis] = useState([]);
@@ -342,30 +314,109 @@ export default function SARIMA({ dados, onSaveModel, modelosAjustados, onVoltar,
   const [opcoesPeriodoInicial, setOpcoesPeriodoInicial] = useState([]);
   const [infoFrequencia, setInfoFrequencia] = useState({ tipo: 'MENSAL', s: 12, label: 'Mensal' });
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
+
+
+
+// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E MONGODB
+const salvarResultadoNoDashboard = async (resultado, config) => {
+    // ✅ AGORA onResultadoModelo está disponível no escopo
+    if (!onResultadoModelo) {
+      console.warn('⚠️ onResultadoModelo não está disponível - salvando apenas no MongoDB');
+    }
     
     try {
+      const nome = `SARIMA(${config.p},${config.d},${config.q})(${config.P},${config.D},${config.Q})[${config.s || config.frequencia || 12}]: ${config.y || 'série temporal'}`;
+      
+      const classificacao = calcularClassificacaoSARIMA(resultado);
+      const metrics = extrairMetricsSARIMA(resultado);
+      
       const dadosParaDashboard = {
-        nome: `SARIMA(${config.p},${config.d},${config.q})(${config.P},${config.D},${config.Q})[${config.s}]: ${config.y}`,
+        nome: nome,
         tipo: "sarima",
         dados: resultado,
         parametros: config,
-        classificacao: calcularClassificacaoSARIMA(resultado),
+        classificacao: classificacao,
         timestamp: new Date().toISOString(),
-        metrics: extrairMetricsSARIMA(resultado),
+        metrics: metrics,
         categoria: "series_temporais",
         fonte: resultado.fonte || 'backend'
       };
+
+      // 1. Dashboard (SÓ SE EXISTIR)
+      if (onResultadoModelo) {
+        onResultadoModelo(dadosParaDashboard);
+        console.log('📤 Resultado SARIMA salvo no Dashboard:', nome);
+      }
       
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado SARIMA salvo no Dashboard:', dadosParaDashboard);
+      // 2. 🔥 MONGODB (SEMPRE TENTA)
+      console.log('💾 Salvando modelo no MongoDB...');
+      const salvo = await ModelosService.salvar({
+        nome: nome,
+        tipo: "sarima",
+        resultado: resultado,
+        parametros: config,
+        classificacao: classificacao,
+        timestamp: dadosParaDashboard.timestamp,
+        metrics: metrics,
+        qualidade: resultado.metricas || {}
+      });
+      
+      if (salvo.success) {
+        console.log('✅ Modelo SARIMA salvo no MongoDB com ID:', salvo.id);
+        console.log(`📊 Classificação: ${classificacao}`);
+        console.log(`📈 MAPE: ${(metrics.mape || 0).toFixed(2)}%`);
+      } else {
+        console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+      }
+      
     } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
+      console.error('❌ Erro ao salvar:', error);
     }
   };
 
+  // 🔥 FUNÇÕES AUXILIARES (também dentro do componente)
+  const calcularClassificacaoSARIMA = (resultado) => {
+    if (!resultado) return "MODERADA";
+    
+    const metricas = resultado.metricas || resultado.qualidade || {};
+    const mape = metricas.mape || 100;
+    const r2 = metricas.r2 || 0;
+    
+    if (mape < 5 || r2 > 0.95) return "EXCELENTE";
+    if (mape < 10 || r2 > 0.90) return "BOA";
+    if (mape < 20 || r2 > 0.80) return "MODERADA";
+    if (mape < 30 || r2 > 0.70) return "BAIXA";
+    
+    return "MUITO BAIXA";
+  };
+
+  const extrairMetricsSARIMA = (resultado) => {
+    if (!resultado) return {};
+    
+    const metricas = resultado.metricas || resultado.qualidade || {};
+    const dadosInfo = resultado.dados_info || {};
+    
+    return {
+      mape: metricas.mape,
+      rmse: metricas.rmse,
+      mae: metricas.mae,
+      mse: metricas.mse,
+      r2: metricas.r2,
+      aic: metricas.aic,
+      bic: metricas.bic,
+      p: metricas.p,
+      d: metricas.d,
+      q: metricas.q,
+      P: metricas.P,
+      D: metricas.D,
+      Q: metricas.Q,
+      frequencia: metricas.frequencia || dadosInfo.frequencia,
+      n_observacoes: dadosInfo.n_observacoes,
+      log_likelihood: metricas.log_likelihood
+    };
+  };
+
+  
   // Extrair variáveis dos dados
   useEffect(() => {
     const dadosArray = extrairDadosArray(dados);

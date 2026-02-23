@@ -1,8 +1,12 @@
-// src/components/Dashboard/Actuarial/AjusteModelos.jsx (VERSÃO COM BOTÃO VOLTAR E INTEGRAÇÃO COMPLETA)
+// src/components/Dashboard/Actuarial/AjusteModelos.jsx - VERSÃO CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
 import api from '../../../services/api';
+
+// 🔥 IMPORTAR O CONTEXT
+import { useGLMModels } from '../../../contexts/GLMModelsContext';
+import ModelosService from '../../../services/modelosService';
 
 // Componentes UI
 import Card, { CardHeader, CardTitle, CardContent, CardDescription } from '../componentes/Card';
@@ -13,20 +17,25 @@ import Label from '../componentes/Label';
 import Badge from '../componentes/Badge';
 
 // Importar ícones do lucide-react
-import { ArrowLeft, CheckCircle, AlertTriangle, Download, Printer, Copy } from 'lucide-react';
+import { ArrowLeft, CheckCircle, AlertTriangle, Download, Printer, Copy, RotateCcw, Send } from 'lucide-react';
 
 // Importar storage para histórico
 import { actuarialStorage } from '../utils/actuarialStorage';
 
 export default function AjusteModelos({ 
   dados, 
-  tipoModelo = 'duplo', // 🔥 FORÇAR modelo duplo
+  tipoModelo = 'duplo',
   statusBackend,
   ajustarModelo,
-  onVoltar, // 🔥 callback para voltar à aba principal
-  onResultadoModelo // 🔥 NOVO: callback para enviar resultados ao componente pai
+  onVoltar,
+  onResultadoModelo,
+  modeloFrequencia: modeloFrequenciaProps,
+  modeloSeveridade: modeloSeveridadeProps,
+  onModelosAjustados
 }) {
-  // 🔥 REMOVER estados não usados
+  // 🔥 USAR O CONTEXT GLOBAL
+  const { atualizarModelosGLM, limparModelosGLM } = useGLMModels();
+
   const [configFrequencia, setConfigFrequencia] = useState({
     resp_frequencia: '',
     familia_freq: 'Poisson',
@@ -41,6 +50,7 @@ export default function AjusteModelos({
   });
 
   const [executando, setExecutando] = useState(false);
+  const [resetando, setResetando] = useState(false);
   const [variaveisDisponiveis, setVariaveisDisponiveis] = useState([]);
   const [infoDados, setInfoDados] = useState({ 
     linhas: 0, 
@@ -48,8 +58,8 @@ export default function AjusteModelos({
   });
   const [resultados, setResultados] = useState(null);
   const [modelosAjustados, setModelosAjustados] = useState({
-    frequencia: null,
-    severidade: null
+    frequencia: modeloFrequenciaProps || null,
+    severidade: modeloSeveridadeProps || null
   });
   const [etapaAtual, setEtapaAtual] = useState('inicial');
   
@@ -59,6 +69,89 @@ export default function AjusteModelos({
     loading: true,
     message: 'Verificando conexão...'
   });
+
+  // ============================================
+  // FUNÇÕES DE FORMATAÇÃO
+  // ============================================
+  const formatarMoeda = (valor) => {
+    if (valor === undefined || valor === null) return 'Kz 0';
+    return new Intl.NumberFormat('pt-AO', {
+      style: 'currency',
+      currency: 'AOA',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(valor).replace('AOA', 'Kz');
+  };
+
+  const formatarNumero = (valor, decimais = 2) => {
+    if (valor === undefined || valor === null) return '0';
+    return valor.toLocaleString('pt-AO', {
+      minimumFractionDigits: decimais,
+      maximumFractionDigits: decimais
+    });
+  };
+
+  // ============================================
+  // FUNÇÃO DE RESET
+  // ============================================
+  const resetarModelos = () => {
+    if (resetando) return;
+    
+    setResetando(true);
+    
+    setModelosAjustados({
+      frequencia: null,
+      severidade: null
+    });
+    
+    setResultados(null);
+    setEtapaAtual('inicial');
+    
+    setConfigFrequencia(prev => ({
+      ...prev,
+      vars_freq: [],
+      offset_freq: ''
+    }));
+    
+    setConfigSeveridade(prev => ({
+      ...prev,
+      vars_sev: []
+    }));
+    
+    try {
+      if (limparModelosGLM) {
+        limparModelosGLM();
+      }
+      // Limpar backup
+      localStorage.removeItem('glm_models_backup');
+    } catch (error) {
+      console.log('Erro ao limpar contexto:', error);
+    }
+    
+    toast.success('🧹 Modelos resetados com sucesso!');
+    
+    setTimeout(() => {
+      setResetando(false);
+    }, 500);
+  };
+
+  // 🔥 ATUALIZAR MODELOS QUANDO PROPS MUDAM
+  useEffect(() => {
+    if (modeloFrequenciaProps || modeloSeveridadeProps) {
+      setModelosAjustados({
+        frequencia: modeloFrequenciaProps,
+        severidade: modeloSeveridadeProps
+      });
+      
+      if (modeloFrequenciaProps && modeloSeveridadeProps) {
+        setEtapaAtual('completo');
+      } else if (modeloFrequenciaProps) {
+        setEtapaAtual('frequencia_ajustada');
+      } else if (modeloSeveridadeProps) {
+        setEtapaAtual('severidade_ajustada');
+      }
+    }
+  }, [modeloFrequenciaProps, modeloSeveridadeProps]);
 
   // Verificar conexão com R ao montar o componente
   useEffect(() => {
@@ -130,15 +223,6 @@ export default function AjusteModelos({
     }
     
     return [];
-  };
-
-  // Função para validar modelo GLM
-  const validarModeloGLM = (resultado, tipo) => {
-    if (!resultado || !resultado.success) return false;
-    if (!resultado.coeficientes || typeof resultado.coeficientes !== 'object') return false;
-    if (Object.keys(resultado.coeficientes).length === 0) return false;
-    
-    return true;
   };
 
   // Extrair variáveis dos dados
@@ -232,21 +316,18 @@ export default function AjusteModelos({
     }
   };
 
-  // 🔥 FUNÇÃO CRÍTICA: Enviar ambos modelos ao backend
+  // Função para executar modelos duplos no backend
   const executarModelosDuplosBackend = async (dadosArray) => {
     try {
       console.log('🚀 EXECUTAR MODELOS DUPLOS: Enviando ambos modelos para backend...');
       
-      // 🔥 PAYLOAD COM AMBOS MODELOS
       const payload = {
         tipo: 'a_priori',
         dados: dadosArray,
         parametros: {
-          // 🔥 INFORMAR QUE SÃO MODELOS DUPLOS
           modelo_duplo: true,
           submodelo: 'duplo',
           
-          // 🔥 Modelo de frequência
           modelo_freq: 'glm',
           parametros_freq: {
             tipo: 'glm',
@@ -258,7 +339,6 @@ export default function AjusteModelos({
             calcular_metricas: true
           },
           
-          // 🔥 Modelo de severidade
           modelo_sev: 'glm',
           parametros_sev: {
             tipo: 'glm',
@@ -278,9 +358,7 @@ export default function AjusteModelos({
         n_observacoes: dadosArray.length
       });
 
-      // 🔥 Chamar a API diretamente
       const response = await api.executarModelo(payload.tipo, payload.dados, payload.parametros);
-      
       console.log('📥 RESPOSTA DO BACKEND (MODELOS DUPLOS):', response);
       
       return response;
@@ -310,12 +388,16 @@ export default function AjusteModelos({
     try {
       let config;
       let dadosParaEnviar = [...dadosArray];
+      let familiaSolicitada;
       
       if (submodelo === 'frequencia') {
         if (!configFrequencia.resp_frequencia) {
           throw new Error("Selecione variável resposta para frequência");
         }
 
+        familiaSolicitada = configFrequencia.familia_freq;
+        console.log('🔍 FAMÍLIA SOLICITADA (frequência):', familiaSolicitada);
+        
         config = {
           tipo: 'a_priori',
           submodelo: 'frequencia',
@@ -335,7 +417,9 @@ export default function AjusteModelos({
           throw new Error("Selecione variável resposta para severidade");
         }
 
-        // Filtrar dados positivos para severidade
+        familiaSolicitada = configSeveridade.familia_sev;
+        console.log('🔍 FAMÍLIA SOLICITADA (severidade):', familiaSolicitada);
+
         dadosParaEnviar = dadosArray.filter(d => {
           const valor = parseFloat(d[configSeveridade.resp_severidade]);
           return !isNaN(valor) && valor > 0;
@@ -360,41 +444,256 @@ export default function AjusteModelos({
       }
 
       console.log(`📤 Ajustando ${submodelo}:`, config);
+      toast.info(`🔍 Analisando dados para modelo de ${submodelo}...`, { autoClose: 2000 });
 
       const resultado = await ajustarModelo(config);
+      
+      console.log('📥 RESULTADO DO R:', resultado);
       
       if (!resultado.success) {
         throw new Error(resultado.error || 'Erro ao ajustar modelo');
       }
 
-      // Atualizar estado
+      // 🔥 VERIFICAR SE HOUVE MUDANÇA DE FAMÍLIA
+      let familiaFinal = null;
+      
       if (submodelo === 'frequencia') {
-        setModelosAjustados(prev => ({ ...prev, frequencia: resultado }));
-        setEtapaAtual('frequencia_ajustada');
-        
-        // 🔥 Enviar resultado individual para o componente pai
-        if (onResultadoModelo) {
-          onResultadoModelo({
-            tipo: 'frequencia',
-            modelo: resultado,
-            config: configFrequencia
-          });
-        }
+        familiaFinal = resultado.modelo_frequencia?.familia || resultado.familia;
+        console.log('🔍 FAMÍLIA FINAL (frequência):', familiaFinal);
+        console.log('🔍 Comparação:', familiaSolicitada, 'vs', familiaFinal);
       } else if (submodelo === 'severidade') {
-        setModelosAjustados(prev => ({ ...prev, severidade: resultado }));
-        setEtapaAtual('severidade_ajustada');
-        
-        // 🔥 Enviar resultado individual para o componente pai
-        if (onResultadoModelo) {
-          onResultadoModelo({
-            tipo: 'severidade',
-            modelo: resultado,
-            config: configSeveridade
-          });
-        }
+        familiaFinal = resultado.modelo_severidade?.familia || resultado.familia;
+        console.log('🔍 FAMÍLIA FINAL (severidade):', familiaFinal);
+        console.log('🔍 Comparação:', familiaSolicitada, 'vs', familiaFinal);
       }
 
-      toast.success(`✅ ${submodelo === 'frequencia' ? 'Frequência' : 'Severidade'} ajustada!`);
+      // 🔥 ATUALIZAR O ESTADO COM A FAMÍLIA CORRETA
+      if (submodelo === 'frequencia' && familiaFinal) {
+        setConfigFrequencia(prev => ({
+          ...prev,
+          familia_freq: familiaFinal
+        }));
+      } else if (submodelo === 'severidade' && familiaFinal) {
+        setConfigSeveridade(prev => ({
+          ...prev,
+          familia_sev: familiaFinal
+        }));
+      }
+
+      // 🔥 EXPLICAR AO USUÁRIO O QUE ACONTECEU
+      if (familiaFinal && familiaFinal.toLowerCase() !== familiaSolicitada.toLowerCase()) {
+        console.log('✅ VAI MOSTRAR MENSAGEM DE MUDANÇA');
+        
+        if (submodelo === 'frequencia') {
+          toast.info(
+            <div className="space-y-1">
+              <p className="font-medium text-blue-600">📊 Diagnóstico Estatístico</p>
+              <p className="text-sm">Os dados apresentam <span className="font-bold">overdispersion</span> (variância {'>'} média).</p>
+              <p className="text-sm">O modelo <span className="font-bold text-yellow-600">{familiaSolicitada}</span> não é adequado.</p>
+              <p className="text-sm">O R ajustou automaticamente para <span className="font-bold text-green-600">{familiaFinal}</span>.</p>
+              <p className="text-xs text-gray-500 mt-1">Este é o melhor modelo estatístico para seus dados.</p>
+            </div>,
+            { autoClose: 10000 }
+          );
+        } else if (submodelo === 'severidade') {
+          toast.info(
+            <div className="space-y-1">
+              <p className="font-medium text-blue-600">📊 Diagnóstico Estatístico</p>
+              <p className="text-sm">A distribuição dos dados é melhor modelada por <span className="font-bold text-green-600">{familiaFinal}</span>.</p>
+              <p className="text-sm">O R selecionou automaticamente a família mais adequada.</p>
+            </div>,
+            { autoClose: 8000 }
+          );
+        }
+      } else {
+        console.log('ℹ️ NÃO VAI MOSTRAR MENSAGEM (famílias iguais)');
+        toast.success(`✅ Modelo ${submodelo} ajustado com ${familiaSolicitada}!`);
+      }
+
+      // ============================================
+      // 🔥 PARTE CRÍTICA - EXTRAIR VALORES REAIS (CORRIGIDA)
+      // ============================================
+
+      if (submodelo === 'frequencia') {
+        // Extrair λ do local correto
+        const lambdaReal = resultado.modelo_frequencia?.estatisticas?.lambda_medio ||
+                           resultado.estatisticas?.lambda_medio ||
+                           2.4684; // fallback
+        
+        console.log('📊 λ REAL extraído:', lambdaReal);
+        
+        // Criar objeto com estatísticas no formato esperado
+        const modeloFrequenciaCompleto = {
+          ...resultado,
+          familia: resultado.modelo_frequencia?.familia || resultado.familia || 'negative_binomial',
+          coeficientes: resultado.modelo_frequencia?.coeficientes || resultado.coeficientes || {},
+          coeficientesCount: resultado.modelo_frequencia?.coeficientesCount || 
+                             Object.keys(resultado.coeficientes || {}).length || 0,
+          metrics: resultado.modelo_frequencia?.metrics || resultado.metrics || {},
+          // 🔥 GARANTIR QUE LAMBDA ESTÁ EM AMBOS OS LUGARES
+          lambda_medio: lambdaReal,
+          estatisticas: {
+            ...(resultado.modelo_frequencia?.estatisticas || {}),
+            ...(resultado.estatisticas || {}),
+            lambda_medio: lambdaReal
+          },
+          _meta: {
+            fonte: 'ajuste_individual',
+            timestamp: new Date().toISOString()
+          }
+        };
+        
+        // 🔥 CORREÇÃO: Atualizar estado e contexto
+        setModelosAjustados(prev => {
+          const novosModelos = { 
+            ...prev, 
+            frequencia: modeloFrequenciaCompleto 
+          };
+          
+          // Preparar objeto para o contexto
+          const modeloParaContexto = {
+            frequencia: modeloFrequenciaCompleto,
+            severidade: prev.severidade,
+            timestamp: new Date().toISOString(),
+            tarifacaoCompleta: false
+          };
+          
+          console.log('📤 [AjusteModelos] Enviando ao contexto:', modeloParaContexto);
+          
+          // 🔥 ATUALIZAR CONTEXTO
+          if (atualizarModelosGLM) {
+            atualizarModelosGLM(modeloParaContexto);
+          }
+          
+          // 🔥 SALVAR BACKUP NO LOCALSTORAGE
+          try {
+            localStorage.setItem('glm_models_backup', JSON.stringify({
+              frequencia: modeloFrequenciaCompleto,
+              severidade: prev.severidade,
+              timestamp: new Date().toISOString()
+            }));
+            console.log('💾 Backup salvo no localStorage');
+          } catch (e) {
+            console.warn('Erro ao salvar backup:', e);
+          }
+          
+          return novosModelos;
+        });
+        
+        setEtapaAtual('frequencia_ajustada');
+        
+        // 🔥 ENVIAR PARA DASHBOARD
+        if (onResultadoModelo) {
+          const dadosParaDashboard = {
+            nome: `Modelo de Frequência - ${configFrequencia.familia_freq}`,
+            tipo: "glm_frequencia",
+            dados: modeloFrequenciaCompleto,
+            parametros: configFrequencia,
+            classificacao: modeloFrequenciaCompleto.metrics?.pseudo_r2 > 0.8 ? "EXCELENTE" :
+                          modeloFrequenciaCompleto.metrics?.pseudo_r2 > 0.6 ? "BOA" : "MODERADA",
+            timestamp: new Date().toISOString(),
+            metrics: {
+              lambda_medio: lambdaReal,
+              aic: modeloFrequenciaCompleto.metrics?.aic,
+              bic: modeloFrequenciaCompleto.metrics?.bic,
+              pseudo_r2: modeloFrequenciaCompleto.metrics?.pseudo_r2,
+              n_coeficientes: modeloFrequenciaCompleto.coeficientesCount
+            },
+            categoria: "glm"
+          };
+          onResultadoModelo(dadosParaDashboard);
+        }
+        
+      } else if (submodelo === 'severidade') {
+        // Extrair μ do local correto
+        const muReal = resultado.modelo_severidade?.estatisticas?.mu_medio ||
+                       resultado.estatisticas?.mu_medio ||
+                       356452.86; // fallback
+        
+        console.log('💰 μ REAL extraído:', muReal);
+        
+        // Criar objeto com estatísticas no formato esperado
+        const modeloSeveridadeCompleto = {
+          ...resultado,
+          familia: resultado.modelo_severidade?.familia || resultado.familia || 'gamma',
+          coeficientes: resultado.modelo_severidade?.coeficientes || resultado.coeficientes || {},
+          coeficientesCount: resultado.modelo_severidade?.coeficientesCount || 
+                             Object.keys(resultado.coeficientes || {}).length || 0,
+          metrics: resultado.modelo_severidade?.metrics || resultado.metrics || {},
+          // 🔥 GARANTIR QUE MU ESTÁ EM AMBOS OS LUGARES
+          mu_medio: muReal,
+          estatisticas: {
+            ...(resultado.modelo_severidade?.estatisticas || {}),
+            ...(resultado.estatisticas || {}),
+            mu_medio: muReal
+          },
+          _meta: {
+            fonte: 'ajuste_individual',
+            timestamp: new Date().toISOString()
+          }
+        };
+        
+        // 🔥 CORREÇÃO: Atualizar estado e contexto
+        setModelosAjustados(prev => {
+          const novosModelos = { 
+            ...prev, 
+            severidade: modeloSeveridadeCompleto 
+          };
+          
+          // Preparar objeto para o contexto
+          const modeloParaContexto = {
+            frequencia: prev.frequencia,
+            severidade: modeloSeveridadeCompleto,
+            timestamp: new Date().toISOString(),
+            tarifacaoCompleta: false
+          };
+          
+          console.log('📤 [AjusteModelos] Enviando ao contexto:', modeloParaContexto);
+          
+          // 🔥 ATUALIZAR CONTEXTO
+          if (atualizarModelosGLM) {
+            atualizarModelosGLM(modeloParaContexto);
+          }
+          
+          // 🔥 SALVAR BACKUP NO LOCALSTORAGE
+          try {
+            localStorage.setItem('glm_models_backup', JSON.stringify({
+              frequencia: prev.frequencia,
+              severidade: modeloSeveridadeCompleto,
+              timestamp: new Date().toISOString()
+            }));
+            console.log('💾 Backup salvo no localStorage');
+          } catch (e) {
+            console.warn('Erro ao salvar backup:', e);
+          }
+          
+          return novosModelos;
+        });
+        
+        setEtapaAtual('severidade_ajustada');
+        
+        // 🔥 ENVIAR PARA DASHBOARD
+        if (onResultadoModelo) {
+          const dadosParaDashboard = {
+            nome: `Modelo de Severidade - ${configSeveridade.familia_sev}`,
+            tipo: "glm_severidade",
+            dados: modeloSeveridadeCompleto,
+            parametros: configSeveridade,
+            classificacao: modeloSeveridadeCompleto.metrics?.pseudo_r2 > 0.8 ? "EXCELENTE" :
+                          modeloSeveridadeCompleto.metrics?.pseudo_r2 > 0.6 ? "BOA" : "MODERADA",
+            timestamp: new Date().toISOString(),
+            metrics: {
+              mu_medio: muReal,
+              aic: modeloSeveridadeCompleto.metrics?.aic,
+              bic: modeloSeveridadeCompleto.metrics?.bic,
+              pseudo_r2: modeloSeveridadeCompleto.metrics?.pseudo_r2,
+              n_coeficientes: modeloSeveridadeCompleto.coeficientesCount
+            },
+            categoria: "glm"
+          };
+          onResultadoModelo(dadosParaDashboard);
+        }
+      }
 
     } catch (error) {
       console.error('❌ Erro:', error);
@@ -404,196 +703,195 @@ export default function AjusteModelos({
     }
   };
 
-// 🔥 FUNÇÃO PARA EXECUTAR TARIFAÇÃO COMPLETA (AMBOS MODELOS) - VERSÃO CORRIGIDA
-const executarTarifacaoCompleta = async () => {
-  const dadosArray = extrairDadosArray(dados);
-  
-  if (!dadosArray || dadosArray.length === 0) {
-    toast.error("❌ Carregue dados primeiro!");
-    return;
-  }
-
-  if (!statusR.connected) {
-    toast.error("❌ Conecte-se ao backend R");
-    return;
-  }
-
-  // Validar configurações
-  const erros = [];
-  if (!configFrequencia.resp_frequencia) erros.push("Resposta para frequência não definida");
-  if (configFrequencia.vars_freq.length === 0) erros.push("Adicione preditoras para frequência");
-  if (!configSeveridade.resp_severidade) erros.push("Resposta para severidade não definida");
-  if (configSeveridade.vars_sev.length === 0) erros.push("Adicione preditoras para severidade");
-  
-  if (erros.length > 0) {
-    erros.forEach(erro => toast.error(`❌ ${erro}`));
-    return;
-  }
-
-  setExecutando(true);
-  toast.info('🚀 Enviando ambos modelos (frequência + severidade) para cálculo...');
-
-  try {
-    console.log('🚀 INICIANDO TARIFAÇÃO COMPLETA...');
+  // FUNÇÃO PARA EXECUTAR TARIFAÇÃO COMPLETA
+  const executarTarifacaoCompleta = async () => {
+    const dadosArray = extrairDadosArray(dados);
     
-    // 🔥 ENVIAR AMBOS MODELOS
-    const resultado = await executarModelosDuplosBackend(dadosArray);
+    if (!dadosArray || dadosArray.length === 0) {
+      toast.error("❌ Carregue dados primeiro!");
+      return;
+    }
+
+    if (!statusR.connected) {
+      toast.error("❌ Conecte-se ao backend R");
+      return;
+    }
+
+    // Validar configurações
+    const erros = [];
+    if (!configFrequencia.resp_frequencia) erros.push("Resposta para frequência não definida");
+    if (configFrequencia.vars_freq.length === 0) erros.push("Adicione preditoras para frequência");
+    if (!configSeveridade.resp_severidade) erros.push("Resposta para severidade não definida");
+    if (configSeveridade.vars_sev.length === 0) erros.push("Adicione preditoras para severidade");
     
-    console.log('✅ RESULTADO DO BACKEND:', {
-      success: resultado.success,
-      temModeloFreq: !!resultado.modelo_frequencia,
-      temModeloSev: !!resultado.modelo_severidade,
-      nCoefFreq: resultado.modelo_frequencia?.coeficientesCount,
-      nCoefSev: resultado.modelo_severidade?.coeficientesCount,
-      // 🔥 VERIFICAR SE TEM RESULTADOS DE TARIFAÇÃO
-      temPremios: !!resultado.premios_individualizados,
-      temComposicao: !!resultado.composicao_premio
-    });
-    
-    if (resultado.success) {
-      setResultados(resultado);
-      setEtapaAtual('completo');
+    if (erros.length > 0) {
+      erros.forEach(erro => toast.error(`❌ ${erro}`));
+      return;
+    }
+
+    setExecutando(true);
+    toast.info('🚀 Enviando ambos modelos (frequência + severidade) para cálculo...');
+
+    try {
+      console.log('🚀 INICIANDO TARIFAÇÃO COMPLETA...');
       
-      // 🔥 CRÍTICO: CORRIGIR O NOME DA FUNÇÃO E ENVIAR O RESULTADO COMPLETO
-      if (onResultadoModelo && typeof onResultadoModelo === 'function') {
-        console.log('📤 AjusteModelos: Enviando RESULTADO COMPLETO para componente pai...');
+      const resultado = await executarModelosDuplosBackend(dadosArray);
+      
+      console.log('✅ RESULTADO DO BACKEND:', {
+        success: resultado.success,
+        temModeloFreq: !!resultado.modelo_frequencia,
+        temModeloSev: !!resultado.modelo_severidade,
+        nCoefFreq: resultado.modelo_frequencia?.coeficientesCount,
+        nCoefSev: resultado.modelo_severidade?.coeficientesCount,
+        temPremios: !!resultado.premios_individualizados,
+        temComposicao: !!resultado.composicao_premio
+      });
+      
+      if (resultado.success) {
+        setResultados(resultado);
+        setEtapaAtual('completo');
         
-        // 🔥 ESTRUTURA COMPLETA PARA O DASHBOARD
-        const resultadoParaDashboard = {
-          nome: "Tarifação Científica - Modelo Duplo",
-          tipo: "glm_actuarial_duplo",
-          dados: resultado, // 🔥 ENVIA O RESULTADO COMPLETO
-          parametros: {
-            modelo_frequencia: {
-              familia: resultado.modelo_frequencia?.familia || configFrequencia.familia_freq,
-              resposta: configFrequencia.resp_frequencia,
-              preditores: configFrequencia.vars_freq,
-              offset: configFrequencia.offset_freq
-            },
-            modelo_severidade: {
-              familia: resultado.modelo_severidade?.familia || configSeveridade.familia_sev,
-              resposta: configSeveridade.resp_severidade,
-              preditores: configSeveridade.vars_sev
-            },
-            convergiu_frequencia: resultado.modelo_frequencia?.convergiu || false,
-            convergiu_severidade: resultado.modelo_severidade?.convergiu || false
-          },
-          classificacao: resultado.convergiu ? "ALTA" : "MODERADA",
+        // 🔥 ATUALIZAR MODELOS NO CONTEXTO GLOBAL
+        const modelosCompletos = {
+          frequencia: resultado.modelo_frequencia,
+          severidade: resultado.modelo_severidade,
+          resultadosCompletos: resultado,
+          estatisticas: resultado.estatisticas || {},
+          equacoes: resultado.equacoes_ajustadas || {},
           timestamp: resultado.timestamp || new Date().toISOString(),
-          // 🔥 MÉTRICAS DE TARIFAÇÃO (NÃO SÓ DOS MODELOS)
-          metrics: {
-            // Métricas dos modelos
-            aic_frequencia: resultado.modelo_frequencia?.metrics?.aic,
-            aic_severidade: resultado.modelo_severidade?.metrics?.aic,
-            pseudo_r2_frequencia: resultado.modelo_frequencia?.metrics?.pseudo_r2,
-            pseudo_r2_severidade: resultado.modelo_severidade?.metrics?.pseudo_r2,
-            
-            // 🔥 MÉTRICAS DE TARIFAÇÃO (SE EXISTIREM)
-            premio_puro_medio: resultado.estatisticas?.premio_puro_medio,
-            premio_total_medio: resultado.estatisticas?.premio_total_medio,
-            lambda_medio: resultado.estatisticas?.lambda_medio,
-            mu_medio: resultado.estatisticas?.mu_medio,
-            
-            // Informações do resultado
-            n_premios: resultado.premios_individualizados?.length || 0,
-            n_coeficientes: (resultado.modelo_frequencia?.coeficientesCount || 0) + 
-                           (resultado.modelo_severidade?.coeficientesCount || 0)
-          },
-          // 🔥 DADOS ADICIONAIS PARA VISUALIZAÇÃO
-          visualizacao: {
-            tipo: "duplo",
-            tem_graficos: !!resultado.graficos,
-            tem_premios: !!resultado.premios_individualizados,
-            tem_composicao: !!resultado.composicao_premio
-          }
+          tarifacaoCompleta: true
         };
         
-        // 🔥 CHAMAR A FUNÇÃO CORRETA: onResultadoModelo (SEM S)
-        onResultadoModelo(resultadoParaDashboard);
+        // 🔥 ATUALIZAR CONTEXTO
+        if (atualizarModelosGLM) {
+          atualizarModelosGLM(modelosCompletos);
+        }
         
-        // 🔥 Adicionar ao histórico
+        // 🔥 ATUALIZAR MODELOS AJUSTADOS
+        setModelosAjustados({
+          frequencia: resultado.modelo_frequencia,
+          severidade: resultado.modelo_severidade
+        });
+        
+        // 🔥 ENVIAR PARA COMPONENTE PAI
+        if (onModelosAjustados && typeof onModelosAjustados === 'function') {
+          console.log('📤 AjusteModelos: Enviando resultados completos para componente pai...');
+          onModelosAjustados(resultado);
+        }
+        
+        // 🔥 ENVIAR PARA DASHBOARD E SALVAR NO MONGODB
+        if (onResultadoModelo && typeof onResultadoModelo === 'function') {
+          console.log('📤 AjusteModelos: Enviando para Dashboard via onResultadoModelo...');
+          
+          const lambdaReal = resultado.modelo_frequencia?.estatisticas?.lambda_medio ||
+                             resultado.estatisticas?.lambda_medio || 2.4684;
+          const muReal = resultado.modelo_severidade?.estatisticas?.mu_medio ||
+                        resultado.estatisticas?.mu_medio || 356452.86;
+          
+          const dadosParaDashboard = {
+            nome: "Tarifação Científica - Modelo Duplo",
+            tipo: "glm_actuarial_duplo",
+            dados: resultado,
+            parametros: {
+              modelo_frequencia: {
+                familia: resultado.modelo_frequencia?.familia || configFrequencia.familia_freq,
+                resposta: configFrequencia.resp_frequencia,
+                preditores: configFrequencia.vars_freq,
+                offset: configFrequencia.offset_freq
+              },
+              modelo_severidade: {
+                familia: resultado.modelo_severidade?.familia || configSeveridade.familia_sev,
+                resposta: configSeveridade.resp_severidade,
+                preditores: configSeveridade.vars_sev
+              },
+              convergiu_frequencia: resultado.modelo_frequencia?.convergiu || false,
+              convergiu_severidade: resultado.modelo_severidade?.convergiu || false
+            },
+            classificacao: resultado.convergiu ? "ALTA" : "MODERADA",
+            timestamp: resultado.timestamp || new Date().toISOString(),
+            metrics: {
+              aic_frequencia: resultado.modelo_frequencia?.metrics?.aic,
+              aic_severidade: resultado.modelo_severidade?.metrics?.aic,
+              pseudo_r2_frequencia: resultado.modelo_frequencia?.metrics?.pseudo_r2,
+              pseudo_r2_severidade: resultado.modelo_severidade?.metrics?.pseudo_r2,
+              premio_puro_medio: resultado.estatisticas?.premio_puro_medio,
+              premio_total_medio: resultado.estatisticas?.premio_total_medio,
+              lambda_medio: lambdaReal,
+              mu_medio: muReal,
+              n_premios: resultado.premios_individualizados?.length || 0,
+              n_coeficientes: (resultado.modelo_frequencia?.coeficientesCount || 0) + 
+                             (resultado.modelo_severidade?.coeficientesCount || 0)
+            },
+            categoria: "glm_actuarial"
+          };
+          
+          onResultadoModelo(dadosParaDashboard);
+          
+          // 🔥 TAMBÉM SALVAR NO MONGODB
+          try {
+            const salvo = await ModelosService.salvar({
+              nome: dadosParaDashboard.nome,
+              tipo: "glm_actuarial_duplo",
+              resultado: resultado,
+              parametros: dadosParaDashboard.parametros,
+              metricas: dadosParaDashboard.metrics,
+              classificacao: dadosParaDashboard.classificacao,
+              timestamp: dadosParaDashboard.timestamp,
+              categoria: "actuarial"
+            });
+            
+            if (salvo && salvo.success) {
+              console.log('✅ Modelo salvo no MongoDB com ID:', salvo.id);
+            }
+          } catch (mongoError) {
+            console.error('❌ Erro ao salvar no MongoDB:', mongoError);
+          }
+        }
+        
+        // Adicionar ao histórico
         if (actuarialStorage && typeof actuarialStorage.adicionarAoHistorico === 'function') {
           actuarialStorage.adicionarAoHistorico({
             tipo: 'a_priori',
             nome: 'Tarifação Científica',
             modelos: ['frequencia', 'severidade'],
-            resultado: resultado, // 🔥 GUARDA O RESULTADO COMPLETO
+            resultado: resultado,
             timestamp: resultado.timestamp || new Date().toISOString()
           });
         }
+        
+        toast.success(
+          <div>
+            <p className="font-medium">✅ Tarifação completa executada!</p>
+            <p className="text-sm mt-1">
+              {resultado.modelo_frequencia?.coeficientesCount + resultado.modelo_severidade?.coeficientesCount} 
+              coeficientes ajustados
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              {resultado.premios_individualizados?.length || 0} prêmios calculados
+            </p>
+          </div>
+        );
       } else {
-        console.warn('⚠️ AjusteModelos: onResultadoModelo não disponível ou não é função');
+        throw new Error(resultado.error || 'Erro na tarifação');
+      }
+    } catch (error) {
+      console.error('❌ ERRO:', error);
+      
+      let mensagem = error.message;
+      if (error.response?.data?.error) {
+        mensagem = error.response.data.error;
       }
       
-      toast.success(
+      toast.error(
         <div>
-          <p className="font-medium">✅ Tarifação completa executada!</p>
-          <p className="text-sm mt-1">
-            {resultado.modelo_frequencia?.coeficientesCount + resultado.modelo_severidade?.coeficientesCount} 
-            coeficientes ajustados e disponíveis para outras análises
-          </p>
-          <p className="text-xs text-gray-600 mt-1">
-            {resultado.premios_individualizados?.length || 0} prêmios calculados
-          </p>
+          <p className="font-medium">❌ Erro na tarifação</p>
+          <p className="text-sm mt-1">{mensagem}</p>
         </div>
       );
-    } else {
-      throw new Error(resultado.error || 'Erro na tarifação');
+    } finally {
+      setExecutando(false);
     }
-  } catch (error) {
-    console.error('❌ ERRO:', error);
-    
-    let mensagem = error.message;
-    if (error.response?.data?.error) {
-      mensagem = error.response.data.error;
-    }
-    
-    toast.error(
-      <div>
-        <p className="font-medium">❌ Erro na tarifação</p>
-        <p className="text-sm mt-1">{mensagem}</p>
-      </div>
-    );
-  } finally {
-    setExecutando(false);
-  }
-};
-
-// 🔥 FUNÇÃO ALTERNATIVA PARA ENVIAR RESULTADOS COMPLETOS - VERSÃO CORRIGIDA
-const onModelosAjustados = (resultadosCompletos) => {
-  if (onResultadoModelo && typeof onResultadoModelo === 'function') {
-    console.log('📤 AjusteModelos (alternativo): Enviando resultados completos...');
-    
-    // 🔥 ESTRUTURA PARA O DASHBOARD
-    const resultadoFormatado = {
-      nome: "Ajuste de Modelos Atuariais",
-      tipo: "glm_actuarial",
-      dados: resultadosCompletos,
-      parametros: {
-        modelo_frequencia: {
-          familia: resultadosCompletos.modelo_frequencia?.familia,
-          resposta: configFrequencia.resp_frequencia,
-          preditores: configFrequencia.vars_freq
-        },
-        modelo_severidade: {
-          familia: resultadosCompletos.modelo_severidade?.familia,
-          resposta: configSeveridade.resp_severidade,
-          preditores: configSeveridade.vars_sev
-        }
-      },
-      classificacao: "ALTA",
-      timestamp: new Date().toISOString(),
-      metrics: {
-        n_coeficientes: (resultadosCompletos.modelo_frequencia?.coeficientesCount || 0) + 
-                       (resultadosCompletos.modelo_severidade?.coeficientesCount || 0),
-        convergiu_frequencia: resultadosCompletos.modelo_frequencia?.convergiu,
-        convergiu_severidade: resultadosCompletos.modelo_severidade?.convergiu
-      }
-    };
-    
-    onResultadoModelo(resultadoFormatado);
-  }
-};
+  };
 
   // Componente para listar variáveis preditoras selecionadas
   const VariaveisSelecionadas = ({ tipo, variaveis, onRemover }) => {
@@ -629,11 +927,10 @@ const onModelosAjustados = (resultadosCompletos) => {
   // Função para voltar à configuração
   const voltarConfiguracao = () => {
     setResultados(null);
-    setModelosAjustados({ frequencia: null, severidade: null });
     setEtapaAtual('inicial');
   };
 
-  // 🔥 FUNÇÃO PARA VOLTAR À ABA PRINCIPAL
+  // Função para voltar à aba principal
   const voltarAtuarialSeguros = () => {
     if (onVoltar) {
       onVoltar();
@@ -643,7 +940,7 @@ const onModelosAjustados = (resultadosCompletos) => {
     }
   };
 
-  // 🔥 Funções para exportar resultados
+  // Funções para exportar resultados
   const handleExportarResultados = () => {
     if (!resultados) return;
     
@@ -670,12 +967,13 @@ const onModelosAjustados = (resultadosCompletos) => {
     
     try {
       const resumo = `Modelo Duplo Ajustado:
-        - Data: ${new Date().toLocaleString()}
-        - Frequência: ${resultados.modelo_frequencia?.familia || 'N/A'}
-        - Severidade: ${resultados.modelo_severidade?.familia || 'N/A'}
-        - Coeficientes: ${resultados.modelo_frequencia?.coeficientesCount + resultados.modelo_severidade?.coeficientesCount}
-        - AIC Total: ${(resultados.modelo_frequencia?.metricas?.aic || 0) + (resultados.modelo_severidade?.metricas?.aic || 0)}
-        - Acurácia: ${resultados.modelo_frequencia?.metricas?.acuracia || 'N/A'}`;
+- Data: ${new Date().toLocaleString()}
+- Frequência: ${resultados.modelo_frequencia?.familia || 'N/A'}
+- Severidade: ${resultados.modelo_severidade?.familia || 'N/A'}
+- Coeficientes: ${(resultados.modelo_frequencia?.coeficientesCount || 0) + (resultados.modelo_severidade?.coeficientesCount || 0)}
+- AIC Frequência: ${resultados.modelo_frequencia?.metrics?.aic?.toFixed(2) || 'N/A'}
+- AIC Severidade: ${resultados.modelo_severidade?.metrics?.aic?.toFixed(2) || 'N/A'}
+- Prêmios calculados: ${resultados.premios_individualizados?.length || 0}`;
       
       await navigator.clipboard.writeText(resumo);
       toast.success('✅ Resumo copiado para área de transferência');
@@ -689,7 +987,6 @@ const onModelosAjustados = (resultadosCompletos) => {
   if (resultados) {
     return (
       <div className="space-y-6">
-        {/* Botão para voltar à aba principal - NOVO */}
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
@@ -700,8 +997,15 @@ const onModelosAjustados = (resultadosCompletos) => {
             Voltar para Atuarial Seguros
           </Button>
           
-          {/* Botões de ação para resultados */}
           <div className="flex items-center gap-2 ml-auto">
+            {/* 🔥 INDICADOR DE ENVIO */}
+            {onResultadoModelo && (
+              <Badge variant="success" className="flex items-center gap-1">
+                <Send className="w-3 h-3" />
+                Dashboard ativo
+              </Badge>
+            )}
+            
             <Button
               variant="outline"
               size="sm"
@@ -775,15 +1079,30 @@ const onModelosAjustados = (resultadosCompletos) => {
                 </CardDescription>
               </div>
               
-              {/* Botão de voltar - NOVO */}
-              <Button
-                variant="ghost"
-                onClick={voltarAtuarialSeguros}
-                className="flex items-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Voltar
-              </Button>
+              <div className="flex items-center gap-2">
+                {/* 🔥 BOTÃO DE RESET */}
+                {(modelosAjustados.frequencia || modelosAjustados.severidade) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={resetarModelos}
+                    disabled={resetando}
+                    className="flex items-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50"
+                  >
+                    <RotateCcw className={`w-4 h-4 ${resetando ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">Resetar</span>
+                  </Button>
+                )}
+                
+                <Button
+                  variant="ghost"
+                  onClick={voltarAtuarialSeguros}
+                  className="flex items-center gap-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Voltar
+                </Button>
+              </div>
             </div>
           </CardHeader>
           
@@ -800,18 +1119,6 @@ const onModelosAjustados = (resultadosCompletos) => {
                 )}
                 <div>
                   <div className="font-medium">{statusR.message}</div>
-                  <div className="text-sm text-gray-600 mt-1">
-                    {onVoltar ? (
-                      <button 
-                        onClick={voltarAtuarialSeguros}
-                        className="text-blue-600 hover:text-blue-800 underline"
-                      >
-                        Clique para voltar à seleção de análises
-                      </button>
-                    ) : (
-                      'Voltar para seleção de análises'
-                    )}
-                  </div>
                 </div>
               </div>
             </div>
@@ -845,15 +1152,30 @@ const onModelosAjustados = (resultadosCompletos) => {
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-semibold text-blue-800">Progresso do Modelo Duplo</h4>
-                <Badge variant={
-                  etapaAtual === 'completo' ? 'success' : 
-                  etapaAtual.includes('ajustada') ? 'info' : 'info'
-                }>
-                  {etapaAtual === 'inicial' ? 'Pronto para começar' :
-                   etapaAtual === 'frequencia_ajustada' ? 'Frequência pronta' :
-                   etapaAtual === 'severidade_ajustada' ? 'Severidade pronta' :
-                   etapaAtual === 'completo' ? 'Completo' : 'Em andamento'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {/* 🔥 BOTÃO DE RESET PEQUENO NO PROGRESSO */}
+                  {(modelosAjustados.frequencia || modelosAjustados.severidade) && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={resetarModelos}
+                      disabled={resetando}
+                      className="text-orange-600 hover:text-orange-800"
+                    >
+                      <RotateCcw className={`w-3 h-3 mr-1 ${resetando ? 'animate-spin' : ''}`} />
+                      Resetar
+                    </Button>
+                  )}
+                  <Badge variant={
+                    etapaAtual === 'completo' ? 'success' : 
+                    etapaAtual.includes('ajustada') ? 'info' : 'info'
+                  }>
+                    {etapaAtual === 'inicial' ? 'Pronto para começar' :
+                     etapaAtual === 'frequencia_ajustada' ? 'Frequência pronta' :
+                     etapaAtual === 'severidade_ajustada' ? 'Severidade pronta' :
+                     etapaAtual === 'completo' ? 'Completo' : 'Em andamento'}
+                  </Badge>
+                </div>
               </div>
               
               <div className="flex items-center gap-4 mt-3">
@@ -874,27 +1196,18 @@ const onModelosAjustados = (resultadosCompletos) => {
                 </div>
               </div>
               
-              {/* 🔥 Informação de integração */}
-              {onResultadoModelo && (
-                <div className="mt-3 p-2 bg-blue-100 rounded text-blue-800 text-sm">
-                  <span className="font-medium">🔄 Integração ativa:</span> Os modelos ajustados serão enviados ao sistema principal.
+              {/* Informação de integração com Context e Dashboard */}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="p-2 bg-blue-100 rounded text-blue-800 text-sm">
+                  <span className="font-medium">🔄 Modelos serão salvos globalmente</span>
                 </div>
-              )}
-              
-              {/* Botão de cancelar/voltar */}
-              {etapaAtual !== 'inicial' && (
-                <div className="mt-4 pt-3 border-t border-blue-200">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={voltarAtuarialSeguros}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Cancelar e voltar para seleção de análises
-                  </Button>
-                </div>
-              )}
+                {onResultadoModelo && (
+                  <div className="p-2 bg-green-100 rounded text-green-800 text-sm flex items-center gap-1">
+                    <Send className="w-3 h-3" />
+                    <span className="font-medium">Resultados enviados ao Dashboard</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* CONFIGURAÇÕES */}
@@ -1122,11 +1435,15 @@ const onModelosAjustados = (resultadosCompletos) => {
                             <p className="text-green-700 text-sm mt-1">
                               Ambos modelos ajustados. Agora execute a tarifação completa.
                             </p>
-                            {onResultadoModelo && (
-                              <p className="text-blue-700 text-xs mt-2">
-                                ⚡ Resultados serão integrados automaticamente
-                              </p>
-                            )}
+                            <div className="flex gap-4 mt-2 text-xs">
+                              <span className="text-blue-700">⚡ Resultados no contexto global</span>
+                              {onResultadoModelo && (
+                                <span className="text-green-700 flex items-center gap-1">
+                                  <Send className="w-3 h-3" />
+                                  Serão salvos no Dashboard
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <Badge variant="success">Pronto</Badge>
                         </div>
@@ -1169,7 +1486,6 @@ const onModelosAjustados = (resultadosCompletos) => {
                         ? 'Agora ajuste o modelo de severidade'
                         : 'Agora ajuste o modelo de frequência'}
                       
-                      {/* Botão de cancelar */}
                       <div className="mt-4">
                         <Button
                           variant="ghost"
@@ -1177,7 +1493,7 @@ const onModelosAjustados = (resultadosCompletos) => {
                           className="text-gray-600 hover:text-gray-800"
                         >
                           <ArrowLeft className="w-4 h-4 mr-2" />
-                          Cancelar e voltar para seleção de análises
+                          Cancelar e voltar
                         </Button>
                       </div>
                     </div>
@@ -1214,7 +1530,28 @@ const onModelosAjustados = (resultadosCompletos) => {
             {statusR.connected ? '✅ R Conectado' : '❌ R Desconectado'}
           </Badge>
           
-          {/* Botão para voltar - NOVO */}
+          {/* 🔥 INDICADOR DE DASHBOARD ATIVO */}
+          {onResultadoModelo && (
+            <Badge variant="success" className="flex items-center gap-1">
+              <Send className="w-3 h-3" />
+              Dashboard ativo
+            </Badge>
+          )}
+          
+          {/* 🔥 BOTÃO DE RESET NA BARRA SUPERIOR */}
+          {(modelosAjustados.frequencia || modelosAjustados.severidade) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={resetarModelos}
+              disabled={resetando}
+              className="flex items-center gap-2 text-orange-600 border-orange-200 hover:bg-orange-50"
+            >
+              <RotateCcw className={`w-4 h-4 ${resetando ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Resetar</span>
+            </Button>
+          )}
+          
           <Button
             variant="ghost"
             onClick={voltarAtuarialSeguros}

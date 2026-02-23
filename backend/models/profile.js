@@ -52,6 +52,45 @@ const profileSchema = new mongoose.Schema({
     type: String,
     required: [true, "Telefone é obrigatório"]
   },
+  
+  // ============ NOVOS CAMPOS ============
+  
+  // 📍 ENDEREÇO
+  endereco: {
+    provincia: { type: String, default: '' },
+    municipio: { type: String, default: '' },
+    bairro: { type: String, default: '' }
+  },
+  
+  // 💼 DADOS ADICIONAIS
+  dadosAdicionais: {
+    areaAtuacao: { type: String, default: '' },
+    cargo: { type: String, default: '' },
+    website: { type: String, default: '' }
+  },
+  
+  // ⚙️ CONFIGURAÇÕES
+  configuracoes: {
+    notificacoes: { type: Boolean, default: true },
+    privacidadePerfil: { 
+      type: String, 
+      enum: ["publico", "privado", "somente_contatos"],
+      default: "publico"
+    },
+    tema: { 
+      type: String, 
+      enum: ["auto", "claro", "escuro"],
+      default: "auto"
+    },
+    idioma: { 
+      type: String, 
+      enum: ["pt", "en", "fr"],
+      default: "pt"
+    }
+  },
+  
+  // ======================================
+  
   imagemPerfil: {
     public_id: String,
     url: String,

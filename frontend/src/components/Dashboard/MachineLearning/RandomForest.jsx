@@ -10,6 +10,7 @@ import Select from '../componentes/Select';
 import { Input, Label } from '../componentes/Input';
 import Badge from '../componentes/Badge';
 import ResultadoML from '../resultados/ResultadoML';
+import ModelosService from '../../../services/modelosService';
 
 // Função para extrair dados do objeto
 const extrairDadosArray = (dadosObj) => {
@@ -52,63 +53,90 @@ export default function RandomForest({ dados, onSaveModel, modelosAjustados, onV
   const [visualizacaoAtiva, setVisualizacaoAtiva] = useState('configuracao');
   const [infoDados, setInfoDados] = useState({ linhas: 0, colunas: 0, amostra: [] });
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
-    
-    try {
-      const dadosParaDashboard = {
-        nome: `Random Forest: ${config.y} ~ ${config.features}`,
-        tipo: "random_forest",
-        dados: resultado,
-        parametros: config,
-        classificacao: calcularClassificacao(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetrics(resultado),
-        categoria: "previsoes"
-      };
-      
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado Random Forest salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
-    }
-  };
+ 
 
-  // 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO
-  const calcularClassificacao = (resultado) => {
-    if (!resultado) return "MODERADA";
-    
-    const accuracy = resultado.metricas_rf?.accuracy || resultado.accuracy || 0;
-    const mse = resultado.metricas_rf?.mse || resultado.mse || 0;
-    const r2 = resultado.metricas_rf?.r2 || resultado.r_squared || 0;
-    
-    // Classificação baseada em métricas
-    if (accuracy > 0.85 || r2 > 0.85 || mse < 0.1) return "ALTA";
-    if (accuracy > 0.70 || r2 > 0.70 || mse < 0.3) return "MODERADA";
-    if (accuracy > 0.55 || r2 > 0.55 || mse < 0.5) return "BAIXA";
-    
-    return "MUITO BAIXA";
-  };
+  // RandomForest.jsx
 
-  // 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS
-  const extrairMetrics = (resultado) => {
-    if (!resultado) return {};
-    
-    return {
-      accuracy: resultado.metricas_rf?.accuracy || resultado.accuracy,
-      precision: resultado.metricas_rf?.precision || resultado.precision,
-      recall: resultado.metricas_rf?.recall || resultado.recall,
-      f1_score: resultado.metricas_rf?.f1_score || resultado.f1_score,
-      mse: resultado.metricas_rf?.mse || resultado.mse,
-      rmse: resultado.metricas_rf?.rmse || resultado.rmse,
-      r_squared: resultado.metricas_rf?.r2 || resultado.r_squared,
-      mae: resultado.metricas_rf?.mae || resultado.mae,
-      importancia_variaveis: resultado.importancia_variaveis,
-      n_arvores: resultado.parametros_usados?.n_estimators || 100,
-      max_depth: resultado.parametros_usados?.max_depth || 6
+// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E NO MONGODB
+const salvarResultadoNoDashboard = async (resultado, config) => {
+  if (!onResultadoModelo) return;
+  
+  try {
+    const dadosParaDashboard = {
+      nome: `Random Forest: ${config.target || config.y} ~ ${config.features || 'features'}`,
+      tipo: "random_forest",
+      dados: resultado,
+      parametros: config,
+      classificacao: calcularClassificacao(resultado),
+      timestamp: new Date().toISOString(),
+      metrics: extrairMetrics(resultado),
+      categoria: "machine_learning"
     };
+
+    // 1. Dashboard
+    onResultadoModelo(dadosParaDashboard);
+    console.log('📤 Resultado Random Forest salvo no Dashboard:', dadosParaDashboard.nome);
+    
+    // 2. 🔥 MongoDB
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: dadosParaDashboard.nome,
+      tipo: "random_forest",
+      resultado: resultado,
+      parametros: config,
+      classificacao: dadosParaDashboard.classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: dadosParaDashboard.metrics,
+      qualidade: resultado.metricas_rf || resultado.qualidade || {}
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo Random Forest salvo no MongoDB com ID:', salvo.id);
+      console.log(`📊 Classificação: ${dadosParaDashboard.classificacao}`);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+    }
+    
+  } catch (error) {
+    console.error('Erro ao salvar:', error);
+  }
+};
+
+// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO (versão melhorada)
+const calcularClassificacao = (resultado) => {
+  if (!resultado) return "MODERADA";
+  
+  const accuracy = resultado.metricas_rf?.accuracy || resultado.accuracy || 0;
+  const mse = resultado.metricas_rf?.mse || resultado.mse || 1;
+  const r2 = resultado.metricas_rf?.r2 || resultado.r_squared || 0;
+  const oob_error = resultado.metricas_rf?.oob_error || resultado.oob_error || 1;
+  
+  // Random Forest tem OOB error como métrica importante
+  if (accuracy > 0.90 || r2 > 0.90 || oob_error < 0.10) return "EXCELENTE";
+  if (accuracy > 0.80 || r2 > 0.80 || oob_error < 0.20) return "BOA";
+  if (accuracy > 0.70 || r2 > 0.70 || oob_error < 0.30) return "MODERADA";
+  if (accuracy > 0.60 || r2 > 0.60 || oob_error < 0.40) return "BAIXA";
+  
+  return "MUITO BAIXA";
+};
+
+// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS
+const extrairMetrics = (resultado) => {
+  if (!resultado) return {};
+  
+  return {
+    accuracy: resultado.metricas_rf?.accuracy || resultado.accuracy,
+    mse: resultado.metricas_rf?.mse || resultado.mse,
+    rmse: resultado.metricas_rf?.rmse || resultado.rmse,
+    mae: resultado.metricas_rf?.mae || resultado.mae,
+    r2: resultado.metricas_rf?.r2 || resultado.r_squared,
+    oob_error: resultado.metricas_rf?.oob_error || resultado.oob_error,
+    n_trees: resultado.metricas_rf?.n_trees || resultado.n_trees,
+    mtry: resultado.metricas_rf?.mtry || resultado.mtry,
+    importancia: resultado.metricas_rf?.importancia || resultado.importancia
   };
+};
+
 
   // 🔥 FUNÇÃO PARA EXECUTAR FALLBACK (SIMULAÇÃO LOCAL)
   const executarFallbackLocal = (dadosArray, variavelY, variaveisPreditoras, config) => {

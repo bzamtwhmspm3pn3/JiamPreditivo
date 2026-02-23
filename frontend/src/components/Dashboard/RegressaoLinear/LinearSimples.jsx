@@ -12,6 +12,8 @@ import Badge from '../componentes/Badge';
 
 // Componentes de Resultados
 import ResultadoLinearAprimorado from '../resultados/ResultadoLinearAprimorado';
+import ModelosService from '../../../services/modelosService';
+
 
 export default function LinearSimples({ dados, onSaveModel, modelosAjustados, onVoltar, statusSistema, onResultadoModelo }) {
   const [variaveis, setVariaveis] = useState([]);
@@ -25,28 +27,65 @@ export default function LinearSimples({ dados, onSaveModel, modelosAjustados, on
     colunas: 0
   });
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
+
+// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E NO MONGODB
+const salvarResultadoNoDashboard = async (resultado, config, dadosOriginais) => {
+  if (!onResultadoModelo) return;
+  
+  try {
+    // Calcular número de observações
+    const n_observacoes = dadosOriginais?.length || config.dados?.length || 0;
     
-    try {
-      const dadosParaDashboard = {
-        nome: `Regressão Simples: ${config.y} ~ ${config.x}`,
-        tipo: "linear_simples",
-        dados: resultado,
-        parametros: config,
-        classificacao: calcularClassificacao(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetrics(resultado),
-        categoria: "previsoes"
-      };
-      
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
+    const dadosParaDashboard = {
+      nome: `Regressão Linear Simples: ${config.y} ~ ${config.x}`,
+      tipo: "linear_simples",
+      dados: resultado,
+      parametros: {
+        ...config,
+        n_observacoes: n_observacoes  // 🔥 ADICIONAR AQUI
+      },
+      classificacao: calcularClassificacao(resultado),
+      timestamp: new Date().toISOString(),
+      metrics: {
+        ...extrairMetrics(resultado),
+        n_observacoes: n_observacoes  // 🔥 TAMBÉM NAS MÉTRICAS
+      },
+      categoria: "previsoes"
+    };
+
+    // 1. Enviar para o Dashboard
+    onResultadoModelo(dadosParaDashboard);
+    console.log('📤 Resultado salvo no Dashboard:', dadosParaDashboard.nome);
+    console.log('📊 Observações:', n_observacoes);
+    
+    // 2. Salvar no MongoDB
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: dadosParaDashboard.nome,
+      tipo: "linear_simples",
+      resultado: resultado,
+      parametros: {
+        ...config,
+        n_observacoes: n_observacoes
+      },
+      classificacao: dadosParaDashboard.classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: {
+        ...extrairMetrics(resultado),
+        n_observacoes: n_observacoes
+      }
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo salvo no MongoDB com ID:', salvo.id);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
     }
-  };
+    
+  } catch (error) {
+    console.error('Erro ao salvar:', error);
+  }
+};
 
   // 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO
   const calcularClassificacao = (resultado) => {
@@ -54,20 +93,13 @@ export default function LinearSimples({ dados, onSaveModel, modelosAjustados, on
     
     const r2 = resultado.metrics.r_squared || 0;
     const rmse = resultado.metrics.rmse || 0;
+    const aic = resultado.metrics.aic || Infinity;
     
     // Classificação baseada em R²
     if (r2 > 0.8) return "ALTA";
     if (r2 > 0.6) return "MODERADA";
     if (r2 > 0.4) return "BAIXA";
-    
-    // Fallback baseado no RMSE se R² não disponível
-    if (rmse > 0) {
-      if (rmse < 0.1) return "ALTA";
-      if (rmse < 0.3) return "MODERADA";
-      return "BAIXA";
-    }
-    
-    return "MODERADA";
+    return "MUITO BAIXA";
   };
 
   // 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS
@@ -83,13 +115,11 @@ export default function LinearSimples({ dados, onSaveModel, modelosAjustados, on
       aic: resultado.metrics?.aic,
       bic: resultado.metrics?.bic,
       f_statistic: resultado.metrics?.f_statistic,
-      p_value: resultado.metrics?.p_value,
-      coeficiente_angular: resultado.coefficients?.[variavelX]?.estimate,
-      intercepto: resultado.coefficients?.['(Intercept)']?.estimate
+      p_value: resultado.metrics?.p_value
     };
   };
 
-  // Função para extrair os dados do objeto
+   // Função para extrair os dados do objeto
   const extrairDadosArray = (dadosObj) => {
     if (!dadosObj) return [];
     

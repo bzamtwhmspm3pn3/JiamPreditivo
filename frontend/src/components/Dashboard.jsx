@@ -1,22 +1,27 @@
 // src/components/Dashboard.jsx
 import React, { useState, useEffect } from "react";
-import FooterJIAMUpdated from "./FooterJIAM";
 import Profile from "./Profile";
 import AbaAjuda from "./AbaAjuda";
 import AbaQuemSomos from "./AbaQuemSomos";
 import { getUserProfile } from "../services/auth";
 
-// Componentes esqueletos das funcionalidades
+// 🔥 IMPORTAR O PROVIDER DO CONTEXTO
+import { GLMModelsProvider } from "../contexts/GLMModelsContext";
+
+// Componentes das funcionalidades
 import Dados from "./Dashboard/Dados";
 import Previsoes from "./Dashboard/Previsoes";
 import AtuarialSeguros from "./Dashboard/AtuarialSeguros";
 import Relatorios from "./Dashboard/Relatorios"; 
-import IAPreditivo from "./Dashboard/IAPreditivo";
 import DataMining from "./Dashboard/DataMining";
 import BigData from "./Dashboard/BigData";
-import InterpretacaoModelos from "./Dashboard/InterpretacaoModelos";
 
-export default function Dashboard({ user, lang, onLogout }) {
+// Componente interno que contém toda a lógica do Dashboard
+function DashboardContent({ user: initialUser, lang, onLogout }) {
+  // Estado para o usuário com persistência
+  const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
   const translations = {
     pt: {
       bemVindo: "Bem-vindo",
@@ -24,9 +29,7 @@ export default function Dashboard({ user, lang, onLogout }) {
       previsoes: "Previsões",
       bigData: "Big Data",
       relatorios: "Relatórios", 
-      interpretacao: "Interpretação dos Modelos",
       dataMining: "Data Mining",
-      iaJIAM: "IA JIAM - Preditivo",
       executarPrevisao: "Executar Previsão",
       execucoesUsadas: "Execuções usadas",
       produtoAtivo: "Produto ativo",
@@ -39,7 +42,7 @@ export default function Dashboard({ user, lang, onLogout }) {
       recentes: "Atividades Recentes",
       config: "Configurações",
       ajuda: "Ajuda",
-      sobre: "Sobre",
+      sobre: "Sobre Nós",
       versao: "Versão 2.0.0",
       completo: "Completo",
       incompleto: "Incompleto",
@@ -69,9 +72,7 @@ export default function Dashboard({ user, lang, onLogout }) {
       previsoes: "Forecasts",
       bigData: "Big Data",
       relatorios: "Reports",
-      interpretacao: "Model Interpretation",
       dataMining: "Data Mining",
-      iaJIAM: "JIAM AI - Predictive",
       executarPrevisao: "Run Forecast",
       execucoesUsadas: "Executions used",
       produtoAtivo: "Active product",
@@ -84,7 +85,7 @@ export default function Dashboard({ user, lang, onLogout }) {
       recentes: "Recent Activities",
       config: "Settings",
       ajuda: "Help",
-      sobre: "About",
+      sobre: "About Us",
       versao: "Version 2.0.0",
       completo: "Complete",
       incompleto: "Incomplete",
@@ -125,19 +126,63 @@ export default function Dashboard({ user, lang, onLogout }) {
     modelosAjustados: {},
     codigoAtivacao: "",
     relatorios: [],
-    resultadosModelos: [], // ← ADICIONADO: Para armazenar resultados dos modelos
+    resultadosModelos: [],
   });
 
+  // Verificar autenticação ao montar componente
   useEffect(() => {
-    loadUserProfile();
-    carregarEstadoLocal();
-  }, []);
+    console.log('🔍 Verificando autenticação...');
+    console.log('initialUser:', initialUser);
+    
+    const token = localStorage.getItem('token');
+    const savedUser = localStorage.getItem('jiam_user');
+    
+    console.log('Token:', token ? 'Presente' : 'Ausente');
+    console.log('savedUser:', savedUser ? 'Presente' : 'Ausente');
+    
+    if (initialUser) {
+      console.log('✅ Usando initialUser das props:', initialUser);
+      setUser(initialUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('jiam_user', JSON.stringify(initialUser));
+      setLoading(false);
+      return;
+    }
+    
+    if (token && savedUser) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        console.log('✅ Usuário recuperado do localStorage:', parsedUser);
+        setUser(parsedUser);
+        setIsAuthenticated(true);
+      } catch (e) {
+        console.error('❌ Erro ao recuperar usuário:', e);
+        setIsAuthenticated(false);
+      }
+    } else {
+      console.log('❌ Nenhum usuário encontrado');
+      setIsAuthenticated(false);
+    }
+    setLoading(false);
+  }, [initialUser]);
+
+  useEffect(() => {
+    if (user && isAuthenticated) {
+      console.log('📥 Carregando perfil para usuário:', user);
+      loadUserProfile();
+      carregarEstadoLocal();
+      carregarResultadosDaAPI();
+    }
+  }, [user, isAuthenticated]);
 
   const loadUserProfile = async () => {
     try {
       if (user && (user.userId || user._id || user.id)) {
         const userId = user.userId || user._id || user.id;
+        console.log('🔄 Buscando perfil para userId:', userId);
+        
         const result = await getUserProfile(userId);
+        console.log('📊 Resultado do perfil:', result);
         
         if (result?.success) {
           setProfileData({
@@ -158,7 +203,7 @@ export default function Dashboard({ user, lang, onLogout }) {
         }
       }
     } catch (error) {
-      console.error("Erro ao carregar perfil:", error);
+      console.error("❌ Erro ao carregar perfil:", error);
       setProfileData({
         nome: user?.username || '',
         email: user?.email || '',
@@ -166,17 +211,15 @@ export default function Dashboard({ user, lang, onLogout }) {
         status: 'incompleto',
         email_confirmado: false
       });
-    } finally {
-      setLoading(false);
     }
   };
 
   const carregarEstadoLocal = () => {
-    // Carregar do localStorage para estado inicial
     try {
       const saved = localStorage.getItem("jiam_dashboard_data");
       if (saved) {
         const parsed = JSON.parse(saved);
+        console.log('📦 Estado local carregado:', parsed);
         setEstadoLocal(prev => ({
           ...prev,
           execucoes: parsed.execucoes || 0,
@@ -185,7 +228,7 @@ export default function Dashboard({ user, lang, onLogout }) {
           dadosUpload: parsed.dadosUpload || null,
           modelosAjustados: parsed.modelosAjustados || {},
           relatorios: parsed.relatorios || [],
-          resultadosModelos: parsed.resultadosModelos || [], // ← ADICIONADO
+          resultadosModelos: parsed.resultadosModelos || [],
         }));
       }
     } catch (error) {
@@ -205,7 +248,7 @@ export default function Dashboard({ user, lang, onLogout }) {
     });
   };
 
-  // Função para adicionar resultado de modelo (chamada pelos componentes de execução)
+  // Função para adicionar resultado de modelo
   const adicionarResultadoModelo = (resultado) => {
     if (!resultado || !resultado.nome) return;
     
@@ -235,10 +278,6 @@ export default function Dashboard({ user, lang, onLogout }) {
     });
 
     return novoResultado;
-  };
-
-  const handleProfileUpdate = () => {
-    loadUserProfile();
   };
 
   const usarModelo = () => {
@@ -285,7 +324,6 @@ export default function Dashboard({ user, lang, onLogout }) {
     }
   };
 
-  // Handlers para comunicação entre componentes
   const handleUploadDados = (dados) => {
     salvarEstadoLocal({
       dadosUpload: dados,
@@ -301,7 +339,6 @@ export default function Dashboard({ user, lang, onLogout }) {
   };
 
   const handleSalvarModelo = (nomeModelo, modelo) => {
-    // Adicionar também aos resultados se for um novo modelo
     if (modelo.resultado && !estadoLocal.modelosAjustados[nomeModelo]) {
       adicionarResultadoModelo({
         nome: nomeModelo,
@@ -320,14 +357,15 @@ export default function Dashboard({ user, lang, onLogout }) {
     });
   };
 
-  // Função para buscar resultados da API/localStorage
   const carregarResultadosDaAPI = async () => {
     try {
-      // Tentar buscar da API se disponível
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
       const response = await fetch('/api/r/resultados', {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
       
@@ -344,16 +382,33 @@ export default function Dashboard({ user, lang, onLogout }) {
     }
   };
 
-  // Carregar resultados ao montar componente
+  const handleLogout = () => {
+    console.log('🚪 Fazendo logout...');
+    
+    localStorage.removeItem('token');
+    localStorage.removeItem('jiam_user');
+    localStorage.removeItem('jiam_dashboard_data');
+    
+    if (onLogout) {
+      onLogout();
+    }
+    
+    window.location.href = '/login';
+  };
+
+  // Se não estiver autenticado, redirecionar
   useEffect(() => {
-    carregarResultadosDaAPI();
-  }, []);
+    if (!loading && !isAuthenticated) {
+      console.log('🔄 Redirecionando para login...');
+      window.location.href = '/login';
+    }
+  }, [loading, isAuthenticated]);
 
   const renderDashboard = () => (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="col-span-1 md:col-span-2 bg-gradient-to-r from-[#0A1F44] to-[#1a3a6e] text-white p-6 rounded-xl shadow-lg">
-          <h2 className="text-2xl font-bold mb-2">{t.bemVindoDeVolta}, {profileData?.nome || "Usuário"}!</h2>
+          <h2 className="text-2xl font-bold mb-2">{t.bemVindoDeVolta}, {profileData?.nome || user?.username || "Usuário"}!</h2>
           <p className="text-gray-300">
             {profileData?.tipo === 'organizacao' 
               ? 'Gerencie as previsões e análises da sua organização.' 
@@ -411,7 +466,6 @@ export default function Dashboard({ user, lang, onLogout }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Cards de acesso rápido */}
         {[
           { 
             key: "Dashboard", 
@@ -441,39 +495,6 @@ export default function Dashboard({ user, lang, onLogout }) {
             desc: `Relatórios e análises (${estadoLocal.resultadosModelos.length})`,
             color: "from-purple-500 to-purple-600"
           },
-        ].map((card) => (
-          <div 
-            key={card.key}
-            className={`bg-gradient-to-br ${card.color} text-white p-6 rounded-xl shadow-lg cursor-pointer hover:shadow-xl transition-all duration-300`}
-            onClick={() => {
-              setAbaAtiva(card.key);
-              if (card.key === "ModelagemPredicoes") setAbaSecundaria("dados");
-            }}
-          >
-            <div className="text-3xl mb-4">{card.icon}</div>
-            <h4 className="font-bold text-lg mb-2">{card.title}</h4>
-            <p className="text-white/80 text-sm">{card.desc}</p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Mais cards de acesso rápido */}
-        {[
-          { 
-            key: "IAJIAM", 
-            icon: "🤖", 
-            title: "IA JIAM",
-            desc: "Assistente preditivo",
-            color: "from-teal-500 to-teal-600"
-          },
-          { 
-            key: "Interpretacao", 
-            icon: "🔍", 
-            title: "Interpretação",
-            desc: "Análise de modelos",
-            color: "from-indigo-500 to-indigo-600"
-          },
           { 
             key: "DataMining", 
             icon: "⛏️", 
@@ -487,6 +508,20 @@ export default function Dashboard({ user, lang, onLogout }) {
             title: "Big Data",
             desc: "Análise em larga escala",
             color: "from-rose-500 to-pink-600"
+          },
+          { 
+            key: "Sobre", 
+            icon: "ℹ️", 
+            title: "Sobre Nós",
+            desc: "Conheça nossa história",
+            color: "from-indigo-500 to-indigo-600"
+          },
+          { 
+            key: "Ajuda", 
+            icon: "❓", 
+            title: "Ajuda",
+            desc: "Suporte e documentação",
+            color: "from-teal-500 to-teal-600"
           },
         ].map((card) => (
           <div 
@@ -505,7 +540,6 @@ export default function Dashboard({ user, lang, onLogout }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Status do sistema */}
         <div className="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">📂 Dados</h3>
           <div className="space-y-3">
@@ -620,7 +654,6 @@ export default function Dashboard({ user, lang, onLogout }) {
         </div>
       </div>
 
-      {/* Seção de Modelos Recentes */}
       {estadoLocal.resultadosModelos.length > 0 && (
         <div className="mt-6">
           <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
@@ -648,7 +681,6 @@ export default function Dashboard({ user, lang, onLogout }) {
                   <button
                     onClick={() => {
                       setAbaAtiva("Relatorios");
-                      // Aqui poderia passar o resultado específico para análise
                     }}
                     className="mt-3 w-full text-sm bg-purple-600 text-white py-1 px-3 rounded hover:bg-purple-700 transition"
                   >
@@ -685,11 +717,22 @@ export default function Dashboard({ user, lang, onLogout }) {
       );
     }
 
+    if (!isAuthenticated) {
+      return null;
+    }
+
     switch (abaAtiva) {
       case "Dashboard":
         return renderDashboard();
+      
       case "Perfil":
-        return <Profile user={user} onUpdate={handleProfileUpdate} />;
+        return <Profile user={user} onUpdate={loadUserProfile} />;
+      
+      case "Sobre":
+        return <AbaQuemSomos />;
+      
+      case "Ajuda":
+        return <AbaAjuda />;
       
       case "ModelagemPredicoes":
         return (
@@ -723,7 +766,7 @@ export default function Dashboard({ user, lang, onLogout }) {
                   dados={estadoLocal.dadosUpload}
                   onUpload={handleUploadDados}
                   usarModelo={usarModelo}
-                  onResultadoModelo={adicionarResultadoModelo} // ← ADICIONADO
+                  onResultadoModelo={adicionarResultadoModelo}
                 />
               )}
               {abaSecundaria === "previsoes" && (
@@ -732,7 +775,7 @@ export default function Dashboard({ user, lang, onLogout }) {
                   usarModelo={usarModelo}
                   onSaveModel={handleSalvarModelo}
                   modelosAjustados={estadoLocal.modelosAjustados}
-                  onResultadoModelo={adicionarResultadoModelo} // ← ADICIONADO
+                  onResultadoModelo={adicionarResultadoModelo}
                 />
               )}
               {abaSecundaria === "atuarial" && (
@@ -741,7 +784,7 @@ export default function Dashboard({ user, lang, onLogout }) {
                   usarModelo={usarModelo}
                   onSaveModel={handleSalvarModelo}
                   modelosAjustados={estadoLocal.modelosAjustados}
-                  onResultadoModelo={adicionarResultadoModelo} // ← ADICIONADO
+                  onResultadoModelo={adicionarResultadoModelo}
                 />
               )}
             </div>
@@ -751,7 +794,7 @@ export default function Dashboard({ user, lang, onLogout }) {
       case "Relatorios": 
         return (
           <Relatorios 
-            resultados={estadoLocal.resultadosModelos} // ← CORRIGIDO: Passando os resultados dos modelos
+            resultados={estadoLocal.resultadosModelos}
             relatorios={estadoLocal.relatorios || []}
             modelos={estadoLocal.modelosAjustados}
             dados={estadoLocal.dadosUpload}
@@ -765,9 +808,6 @@ export default function Dashboard({ user, lang, onLogout }) {
           />
         );
       
-      case "IAJIAM":
-        return <IAPreditivo onResultadoModelo={adicionarResultadoModelo} />;
-      
       case "DataMining":
         return <DataMining 
           dados={estadoLocal.dadosUpload} 
@@ -779,19 +819,6 @@ export default function Dashboard({ user, lang, onLogout }) {
           dados={estadoLocal.dadosUpload}
           onResultadoModelo={adicionarResultadoModelo}
         />;
-      
-      case "Interpretacao":
-        return <InterpretacaoModelos 
-          modelos={estadoLocal.modelosAjustados} 
-          dados={estadoLocal.dadosUpload}
-          resultados={estadoLocal.resultadosModelos}
-        />;
-      
-      case "Sobre":
-        return <AbaQuemSomos />;
-      
-      case "Ajuda":
-        return <AbaAjuda />;
       
       case "Configuracoes":
         return (
@@ -876,7 +903,6 @@ export default function Dashboard({ user, lang, onLogout }) {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -911,11 +937,9 @@ export default function Dashboard({ user, lang, onLogout }) {
       </header>
 
       <div className="flex flex-1">
-        {/* Sidebar */}
         <aside className="w-64 bg-[#0A1F44] text-white flex flex-col">
           <div className="p-4 flex-1">
             <nav className="space-y-2">
-              {/* Botões principais no topo */}
               <button
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors w-full text-left ${
                   abaAtiva === "Dashboard" 
@@ -940,7 +964,6 @@ export default function Dashboard({ user, lang, onLogout }) {
                 <span>{t.perfil}</span>
               </button>
 
-              {/* Grupo: Modelagem e Predições */}
               <div className="mt-4 mb-4">
                 <div className="flex items-center gap-2 mb-2 px-3 py-2 text-gray-300 text-sm font-medium">
                   <span>📊</span>
@@ -992,13 +1015,12 @@ export default function Dashboard({ user, lang, onLogout }) {
                 </div>
               </div>
 
-              {/* Outras abas */}
               {[
                 { key: "Relatorios", icon: "📋", label: `${t.relatorios} (${estadoLocal.resultadosModelos.length})` },
-                { key: "IAJIAM", icon: "🤖", label: t.iaJIAM },
-                { key: "Interpretacao", icon: "📊", label: t.interpretacao },
                 { key: "DataMining", icon: "⛏️", label: t.dataMining },
                 { key: "BigData", icon: "💾", label: t.bigData },
+                { key: "Sobre", icon: "ℹ️", label: t.sobre },
+                { key: "Ajuda", icon: "❓", label: t.ajuda },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -1015,7 +1037,6 @@ export default function Dashboard({ user, lang, onLogout }) {
               ))}
             </nav>
 
-            {/* Seção inferior */}
             <div className="mt-8 pt-4 border-t border-white/20">
               <div className="space-y-1">
                 <button
@@ -1029,30 +1050,8 @@ export default function Dashboard({ user, lang, onLogout }) {
                   <span>⚙️</span>
                   <span>{t.config}</span>
                 </button>
-                <button
-                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors w-full ${
-                    abaAtiva === "Ajuda" 
-                      ? "bg-[#00CFFF] text-[#0A1F44] font-semibold" 
-                      : "hover:bg-white/10"
-                  }`}
-                  onClick={() => setAbaAtiva("Ajuda")}
-                >
-                  <span>❓</span>
-                  <span>{t.ajuda}</span>
-                </button>
-                <button
-                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors w-full ${
-                    abaAtiva === "Sobre" 
-                      ? "bg-[#00CFFF] text-[#0A1F44] font-semibold" 
-                      : "hover:bg-white/10"
-                  }`}
-                  onClick={() => setAbaAtiva("Sobre")}
-                >
-                  <span>ℹ️</span>
-                  <span>{t.sobre}</span>
-                </button>
                 <button 
-                  onClick={onLogout}
+                  onClick={handleLogout}
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-red-500/20 text-red-300 hover:text-red-200 transition-colors w-full"
                 >
                   <span>🚪</span>
@@ -1069,13 +1068,20 @@ export default function Dashboard({ user, lang, onLogout }) {
           </div>
         </aside>
 
-        {/* Main Content */}
         <main className="flex-1 p-6 overflow-auto">
           {renderConteudo()}
         </main>
       </div>
 
-      <FooterJIAMUpdated setAbaAtiva={setAbaAtiva} lang={lang} />
-    </div>
+      </div>
+  );
+}
+
+// 🔥 COMPONENTE PRINCIPAL COM O PROVIDER
+export default function Dashboard(props) {
+  return (
+    <GLMModelsProvider>
+      <DashboardContent {...props} />
+    </GLMModelsProvider>
   );
 }

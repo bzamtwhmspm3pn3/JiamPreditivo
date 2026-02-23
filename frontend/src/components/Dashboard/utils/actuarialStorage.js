@@ -1,9 +1,11 @@
-// Utilitário para gerenciar armazenamento de modelos atuariais
+// src/components/Dashboard/utils/actuarialStorage.js - VERSÃO COMPLETA CORRIGIDA
+
 const STORAGE_KEYS = {
   MODELOS_GLM: 'modelosGLM_Atuarial',
   ULTIMO_MONTE_CARLO: 'ultimo_monte_carlo',
   MODELOS_AJUSTADOS: 'modelosAjustados_Atuarial',
-  HISTORICO_ANALISES: 'historicoAnalisesAtuariais'
+  HISTORICO_ANALISES: 'historicoAnalisesAtuariais',
+  RESULTADOS: 'resultados_atuariais'
 };
 
 export const actuarialStorage = {
@@ -12,7 +14,7 @@ export const actuarialStorage = {
   // ============================================
   
   // Salvar modelos GLM
-  salvarModelosGLM: (modelos) => {
+  salvarModelosGLM: function(modelos) {
     try {
       console.log('💾 Salvando modelos GLM no storage:', {
         temFrequencia: !!modelos.frequencia,
@@ -41,7 +43,7 @@ export const actuarialStorage = {
   },
 
   // Recuperar modelos GLM
-  recuperarModelosGLM: () => {
+  recuperarModelosGLM: function() {
     try {
       console.log('📥 Recuperando modelos GLM do storage...');
       const data = localStorage.getItem(STORAGE_KEYS.MODELOS_GLM);
@@ -53,7 +55,6 @@ export const actuarialStorage = {
       
       const parsed = JSON.parse(data);
       
-      // Validar dados
       if (!parsed.frequencia || !parsed.severidade) {
         console.warn('⚠️ Modelos GLM incompletos no storage');
         return null;
@@ -62,8 +63,7 @@ export const actuarialStorage = {
       console.log('✅ Modelos GLM recuperados:', {
         timestamp: parsed.timestamp,
         nCoefFreq: parsed.frequencia?.coeficientesCount || 0,
-        nCoefSev: parsed.severidade?.coeficientesCount || 0,
-        idade: ((Date.now() - new Date(parsed.timestamp).getTime()) / (1000 * 60 * 60)).toFixed(1) + ' horas'
+        nCoefSev: parsed.severidade?.coeficientesCount || 0
       });
       
       return parsed;
@@ -77,8 +77,7 @@ export const actuarialStorage = {
   // MONTE CARLO
   // ============================================
   
-  // Salvar resultado de Monte Carlo
-  salvarMonteCarlo: (resultado) => {
+  salvarMonteCarlo: function(resultado) {
     try {
       const data = {
         resultado,
@@ -95,8 +94,7 @@ export const actuarialStorage = {
     }
   },
 
-  // Recuperar último Monte Carlo
-  recuperarMonteCarlo: () => {
+  recuperarMonteCarlo: function() {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.ULTIMO_MONTE_CARLO);
       return data ? JSON.parse(data) : null;
@@ -110,37 +108,90 @@ export const actuarialStorage = {
   // HISTÓRICO DE ANÁLISES
   // ============================================
   
-  adicionarAoHistorico: (analise) => {
+  // 🔥 CORRIGIDO: Método salvarHistorico adicionado
+  salvarHistorico: function(historico) {
     try {
-      const historico = this.recuperarHistorico();
+      if (!historico || !Array.isArray(historico)) {
+        console.warn('⚠️ Histórico inválido para salvar');
+        return false;
+      }
+      
+      localStorage.setItem(STORAGE_KEYS.HISTORICO_ANALISES, JSON.stringify(historico));
+      console.log('✅ Histórico salvo no storage:', historico.length, 'itens');
+      return true;
+    } catch (error) {
+      console.error('❌ Erro ao salvar histórico:', error);
+      return false;
+    }
+  },
+
+  recuperarHistorico: function() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.HISTORICO_ANALISES);
+      if (!data) {
+        console.log('ℹ️ Nenhum histórico encontrado');
+        return [];
+      }
+      const parsed = JSON.parse(data);
+      console.log('📥 Histórico recuperado:', parsed.length, 'itens');
+      return parsed;
+    } catch (error) {
+      console.error('❌ Erro ao recuperar histórico:', error);
+      return [];
+    }
+  },
+
+  adicionarAoHistorico: function(analise) {
+    try {
+      const historico = this.recuperarHistorico() || [];
       const novaAnalise = {
         ...analise,
         id: Date.now(),
         timestamp: new Date().toISOString()
       };
       
-      historico.unshift(novaAnalise); // Adiciona no início
+      historico.unshift(novaAnalise);
       
-      // Manter apenas últimos 20
       if (historico.length > 20) {
         historico.length = 20;
       }
       
-      localStorage.setItem(STORAGE_KEYS.HISTORICO_ANALISES, JSON.stringify(historico));
+      this.salvarHistorico(historico);
+      console.log('✅ Análise adicionada ao histórico:', novaAnalise.nome || 'Sem nome');
       return true;
     } catch (error) {
-      console.error('Erro ao adicionar ao histórico:', error);
+      console.error('❌ Erro ao adicionar ao histórico:', error);
       return false;
     }
   },
 
-  recuperarHistorico: () => {
+  // ============================================
+  // RESULTADOS ESPECÍFICOS
+  // ============================================
+  
+  salvarResultado: function(tipo, dados) {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.HISTORICO_ANALISES);
-      return data ? JSON.parse(data) : [];
+      const chave = `${STORAGE_KEYS.RESULTADOS}_${tipo}`;
+      localStorage.setItem(chave, JSON.stringify({
+        ...dados,
+        timestamp: new Date().toISOString()
+      }));
+      console.log(`💾 Resultado ${tipo} salvo no storage`);
+      return true;
     } catch (error) {
-      console.error('Erro ao recuperar histórico:', error);
-      return [];
+      console.error(`❌ Erro ao salvar resultado ${tipo}:`, error);
+      return false;
+    }
+  },
+
+  recuperarResultado: function(tipo) {
+    try {
+      const chave = `${STORAGE_KEYS.RESULTADOS}_${tipo}`;
+      const dados = localStorage.getItem(chave);
+      return dados ? JSON.parse(dados) : null;
+    } catch (error) {
+      console.error(`❌ Erro ao recuperar resultado ${tipo}:`, error);
+      return null;
     }
   },
 
@@ -148,12 +199,19 @@ export const actuarialStorage = {
   // UTILITÁRIOS
   // ============================================
   
-  // Limpar todos os dados atuariais
-  limparDadosAtuariais: () => {
+  limparDadosAtuariais: function() {
     try {
       Object.values(STORAGE_KEYS).forEach(key => {
         localStorage.removeItem(key);
       });
+      
+      const keys = Object.keys(localStorage);
+      keys.forEach(key => {
+        if (key.startsWith(STORAGE_KEYS.RESULTADOS)) {
+          localStorage.removeItem(key);
+        }
+      });
+      
       console.log('🧹 Dados atuariais limpos do storage');
       return true;
     } catch (error) {
@@ -162,8 +220,7 @@ export const actuarialStorage = {
     }
   },
 
-  // Limpar apenas modelos GLM
-  limparModelosGLM: () => {
+  limparModelosGLM: function() {
     try {
       localStorage.removeItem(STORAGE_KEYS.MODELOS_GLM);
       console.log('🧹 Modelos GLM removidos');
@@ -174,8 +231,7 @@ export const actuarialStorage = {
     }
   },
 
-  // Verificar se há modelos salvos
-  temModelosSalvos: () => {
+  temModelosSalvos: function() {
     const modelos = localStorage.getItem(STORAGE_KEYS.MODELOS_GLM);
     if (!modelos) return false;
     
@@ -187,8 +243,7 @@ export const actuarialStorage = {
     }
   },
 
-  // Obter estatísticas de armazenamento
-  getEstatisticas: () => {
+  getEstatisticas: function() {
     const modelos = localStorage.getItem(STORAGE_KEYS.MODELOS_GLM);
     const monteCarlo = localStorage.getItem(STORAGE_KEYS.ULTIMO_MONTE_CARLO);
     const historico = localStorage.getItem(STORAGE_KEYS.HISTORICO_ANALISES);
@@ -213,7 +268,6 @@ export const actuarialStorage = {
       timestampMonteCarlo: monteCarloData?.timestamp,
       usandoModelosGLM: monteCarloData?.usando_modelos_glm || false,
       
-      // Métricas dos modelos
       metricasModelos: modelosData ? {
         nCoeficientes: (modelosData.frequencia?.coeficientesCount || 0) + 
                        (modelosData.severidade?.coeficientesCount || 0),
@@ -225,8 +279,7 @@ export const actuarialStorage = {
     };
   },
 
-  // Exportar dados para backup
-  exportarDados: () => {
+  exportarDados: function() {
     try {
       const dados = {};
       Object.entries(STORAGE_KEYS).forEach(([key, storageKey]) => {
@@ -253,8 +306,7 @@ export const actuarialStorage = {
     }
   },
 
-  // Importar dados de backup
-  importarDados: (dados) => {
+  importarDados: function(dados) {
     try {
       Object.entries(dados).forEach(([key, value]) => {
         const storageKey = STORAGE_KEYS[key];
@@ -271,11 +323,9 @@ export const actuarialStorage = {
     }
   },
 
-  // Validar integridade dos dados
-  validarIntegridade: () => {
+  validarIntegridade: function() {
     const problemas = [];
     
-    // Verificar modelos GLM
     const modelos = this.recuperarModelosGLM();
     if (modelos) {
       if (!modelos.frequencia) problemas.push('Modelo de frequência ausente');
@@ -283,7 +333,6 @@ export const actuarialStorage = {
       if (!modelos.timestamp) problemas.push('Timestamp ausente nos modelos');
     }
     
-    // Verificar histórico
     try {
       const historico = this.recuperarHistorico();
       if (!Array.isArray(historico)) {
@@ -300,3 +349,8 @@ export const actuarialStorage = {
     };
   }
 };
+
+// 🔥 Adicionar ao window para debug (opcional)
+if (typeof window !== 'undefined') {
+  window.actuarialStorage = actuarialStorage;
+}

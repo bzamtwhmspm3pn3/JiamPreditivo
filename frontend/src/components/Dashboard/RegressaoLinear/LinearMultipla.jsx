@@ -12,6 +12,7 @@ import Badge from '../componentes/Badge';
 
 // Componentes de Resultados
 import ResultadoLinearMultiplaAprimorado from '../resultados/ResultadoLinearMultiplaAprimorado';
+import ModelosService from '../../../services/modelosService';
 
 export default function LinearMultipla({ 
   dados, 
@@ -57,28 +58,49 @@ export default function LinearMultipla({
     return [];
   };
 
-  // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD
-  const salvarResultadoNoDashboard = (resultado, config) => {
-    if (!onResultadoModelo) return;
+ // 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E NO MONGODB
+const salvarResultadoNoDashboard = async (resultado, config) => {
+  if (!onResultadoModelo) return;
+  
+  try {
+    const dadosParaDashboard = {
+      nome: `Regressão Múltipla: ${config.y} ~ ${config.x_multiplas}`,
+      tipo: "linear_multipla",
+      dados: resultado,
+      parametros: config,
+      classificacao: calcularClassificacao(resultado),
+      timestamp: new Date().toISOString(),
+      metrics: extrairMetrics(resultado),
+      categoria: "previsoes"
+    };
+
     
-    try {
-      const dadosParaDashboard = {
-        nome: `Regressão Múltipla: ${config.y} ~ ${config.x_multiplas}`,
-        tipo: "linear_multipla",
-        dados: resultado,
-        parametros: config,
-        classificacao: calcularClassificacao(resultado),
-        timestamp: new Date().toISOString(),
-        metrics: extrairMetrics(resultado),
-        categoria: "previsoes"
-      };
-      
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado salvo no Dashboard:', dadosParaDashboard);
-    } catch (error) {
-      console.error('Erro ao salvar no Dashboard:', error);
+    // 1. Enviar para o Dashboard (como já fazia)
+    onResultadoModelo(dadosParaDashboard);
+    console.log('📤 Resultado salvo no Dashboard:', dadosParaDashboard);
+    
+    // 2. 🔥 NOVO: Salvar no MongoDB via ModelosService
+    console.log('💾 Salvando modelo no MongoDB...');
+    const salvo = await ModelosService.salvar({
+      nome: dadosParaDashboard.nome,
+      tipo: dadosParaDashboard.tipo,
+      resultado: resultado,
+      parametros: config,
+      classificacao: dadosParaDashboard.classificacao,
+      timestamp: dadosParaDashboard.timestamp,
+      metrics: dadosParaDashboard.metrics
+    });
+    
+    if (salvo.success) {
+      console.log('✅ Modelo salvo no MongoDB com ID:', salvo.id);
+    } else {
+      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
     }
-  };
+    
+  } catch (error) {
+    console.error('Erro ao salvar:', error);
+  }
+};
 
   // 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO
   const calcularClassificacao = (resultado) => {

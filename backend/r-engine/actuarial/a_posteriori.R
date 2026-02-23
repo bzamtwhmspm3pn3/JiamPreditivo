@@ -5,9 +5,25 @@ library(dplyr)
 library(tidyr)
 library(stats)
 
-# ------------------------------------------------------------
-# FUNÇÕES AUXILIARES (COMPATÍVEIS COM A_PRIORI)
-# ------------------------------------------------------------
+# ============================================
+# FUNÇÃO PARA CONVERTER TABELAS PARA JSON
+# ============================================
+toJSON_safe <- function(x, ...) {
+  # Se for table, converter para data frame primeiro
+  if (inherits(x, "table")) {
+    x <- as.data.frame(x, stringsAsFactors = FALSE)
+  }
+  # Se for matrix, converter para data frame
+  if (is.matrix(x)) {
+    x <- as.data.frame(x)
+  }
+  # Usar toJSON padrão
+  return(toJSON(x, auto_unbox = TRUE, ...))
+}
+
+# ============================================
+# FUNÇÕES AUXILIARES
+# ============================================
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
@@ -18,14 +34,13 @@ limpar_nomes_variaveis <- function(nomes) {
   return(make.names(nomes))
 }
 
-# ------------------------------------------------------------
-# FUNÇÕES DE CREDIBILIDADE CIENTÍFICAS
-# ------------------------------------------------------------
+# ============================================
+# FUNÇÕES DE CREDIBILIDADE
+# ============================================
 
 calcular_estatisticas_grupo <- function(dados, grupo_var, tempo_var, sinistro_var, custo_var) {
   cat("   📊 Calculando estatísticas por grupo...\n")
   
-  # Garantir que as colunas existem
   cols_necessarias <- c(grupo_var, tempo_var, sinistro_var, custo_var)
   missing_cols <- setdiff(cols_necessarias, names(dados))
   
@@ -33,7 +48,6 @@ calcular_estatisticas_grupo <- function(dados, grupo_var, tempo_var, sinistro_va
     stop(paste("Colunas faltando:", paste(missing_cols, collapse = ", ")))
   }
   
-  # Converter para tipos apropriados
   dados_converted <- dados %>%
     mutate(
       !!sym(grupo_var) := as.character(!!sym(grupo_var)),
@@ -42,7 +56,6 @@ calcular_estatisticas_grupo <- function(dados, grupo_var, tempo_var, sinistro_va
       !!sym(custo_var) := as.numeric(as.character(!!sym(custo_var)))
     )
   
-  # Remover NAs
   dados_clean <- na.omit(dados_converted[cols_necessarias])
   
   if (nrow(dados_clean) == 0) {
@@ -51,7 +64,6 @@ calcular_estatisticas_grupo <- function(dados, grupo_var, tempo_var, sinistro_va
   
   cat(sprintf("   ✅ Dados limpos: %d observações\n", nrow(dados_clean)))
   
-  # Agrupar e calcular estatísticas
   estatisticas <- dados_clean %>%
     group_by(!!sym(grupo_var), !!sym(tempo_var)) %>%
     summarise(
@@ -71,13 +83,11 @@ calcular_estatisticas_grupo <- function(dados, grupo_var, tempo_var, sinistro_va
   return(estatisticas)
 }
 
-# MÉTODO BÜHLMANN-STRAUB CIENTÍFICO
 aplicar_buhlmann_straub_cientifico <- function(estatisticas, grupo_var) {
   grupos <- unique(estatisticas[[grupo_var]])
   
   cat("   🔧 Aplicando método Bühlmann-Straub...\n")
   
-  # Calcular estatísticas por grupo com pesos
   estat_grupo <- estatisticas %>%
     group_by(!!sym(grupo_var)) %>%
     summarise(
@@ -89,14 +99,12 @@ aplicar_buhlmann_straub_cientifico <- function(estatisticas, grupo_var) {
       .groups = 'drop'
     )
   
-  # Remover grupos sem peso
   estat_grupo <- estat_grupo %>% filter(peso_total > 0)
   
   if (nrow(estat_grupo) < 2) {
     stop("Dados insuficientes para Bühlmann-Straub (mínimo 2 grupos com exposição)")
   }
   
-  # Calcular variância dentro dos grupos
   var_dentro <- estatisticas %>%
     left_join(estat_grupo %>% select(!!sym(grupo_var), media_ponderada), 
               by = grupo_var) %>%
@@ -109,12 +117,10 @@ aplicar_buhlmann_straub_cientifico <- function(estatisticas, grupo_var) {
     summarise(var_dentro_media = mean(var_grupo, na.rm = TRUE)) %>%
     pull(var_dentro_media)
   
-  # Calcular variância entre grupos
   peso_total_global <- sum(estat_grupo$peso_total)
   media_global_ponderada <- sum(estat_grupo$media_ponderada * estat_grupo$peso_total) / 
                            peso_total_global
   
-  # Estimar σ² (variância entre grupos)
   numerador <- sum(estat_grupo$peso_total * 
                    (estat_grupo$media_ponderada - media_global_ponderada)^2)
   denom <- peso_total_global - sum(estat_grupo$peso_total^2) / peso_total_global
@@ -125,14 +131,12 @@ aplicar_buhlmann_straub_cientifico <- function(estatisticas, grupo_var) {
     var_entre <- 0
   }
   
-  # Calcular fatores de credibilidade
   estat_grupo$fator_credibilidade <- if (var_entre > 0) {
     estat_grupo$peso_total / (estat_grupo$peso_total + var_dentro / var_entre)
   } else {
     rep(0, nrow(estat_grupo))
   }
   
-  # Limitar entre 0 e 1
   estat_grupo$fator_credibilidade <- pmin(pmax(estat_grupo$fator_credibilidade, 0), 1)
   
   return(list(
@@ -144,13 +148,11 @@ aplicar_buhlmann_straub_cientifico <- function(estatisticas, grupo_var) {
   ))
 }
 
-# MÉTODO BÜHLMANN SIMPLIFICADO
 aplicar_buhlmann_simplificado <- function(estatisticas, grupo_var) {
   grupos <- unique(estatisticas[[grupo_var]])
   
   cat("   🔧 Aplicando método Bühlmann simplificado...\n")
   
-  # Calcular médias por grupo
   estat_grupo <- estatisticas %>%
     group_by(!!sym(grupo_var)) %>%
     summarise(
@@ -164,23 +166,16 @@ aplicar_buhlmann_simplificado <- function(estatisticas, grupo_var) {
     stop("Dados insuficientes para Bühlmann (mínimo 2 grupos)")
   }
   
-  # Média global
   media_global <- mean(estat_grupo$media_premio, na.rm = TRUE)
-  
-  # Variância entre grupos
   var_entre <- var(estat_grupo$media_premio, na.rm = TRUE)
-  
-  # Variância dentro (média das variâncias)
   var_dentro <- mean(estat_grupo$var_grupo / estat_grupo$n_anos, na.rm = TRUE)
   
-  # Fatores de credibilidade
   estat_grupo$fator_credibilidade <- if (var_entre > 0) {
     estat_grupo$n_anos / (estat_grupo$n_anos + var_dentro / var_entre)
   } else {
     rep(0, nrow(estat_grupo))
   }
   
-  # Limitar
   estat_grupo$fator_credibilidade <- pmin(pmax(estat_grupo$fator_credibilidade, 0), 1)
   
   return(list(
@@ -192,11 +187,9 @@ aplicar_buhlmann_simplificado <- function(estatisticas, grupo_var) {
   ))
 }
 
-# CALCULAR PRÊMIOS A POSTERIORI
 calcular_premios_posteriori <- function(metodo_resultados, estatisticas, grupo_var, 
                                        z_min = 0.3, z_max = 0.9) {
   
-  # Extrair dados do método
   if ("estat_grupo" %in% names(metodo_resultados)) {
     dados_cred <- metodo_resultados$estat_grupo
     media_global <- metodo_resultados$media_global
@@ -204,13 +197,11 @@ calcular_premios_posteriori <- function(metodo_resultados, estatisticas, grupo_v
     stop("Resultados do método de credibilidade mal formatados")
   }
   
-  # Aplicar limites de credibilidade
   dados_cred$fator_credibilidade_ajustado <- pmin(
     pmax(dados_cred$fator_credibilidade, z_min), 
     z_max
   )
   
-  # Preparar estatísticas do grupo
   estat_grupo <- estatisticas %>%
     group_by(!!sym(grupo_var)) %>%
     summarise(
@@ -222,7 +213,6 @@ calcular_premios_posteriori <- function(metodo_resultados, estatisticas, grupo_v
       .groups = 'drop'
     )
   
-  # Juntar e calcular prêmios a posteriori
   premios <- dados_cred %>%
     select(grupo = !!sym(grupo_var), fator_credibilidade = fator_credibilidade_ajustado) %>%
     left_join(estat_grupo, by = c("grupo" = grupo_var)) %>%
@@ -241,11 +231,9 @@ calcular_premios_posteriori <- function(metodo_resultados, estatisticas, grupo_v
   ))
 }
 
-# VALIDAÇÃO DOS DADOS
 validar_dados_credibilidade <- function(dados, parametros) {
   cat("   🔍 Validando dados para credibilidade...\n")
   
-  # Verificar parâmetros obrigatórios
   obrigatorios <- c("grupo_var", "tempo_var", "sinistro_var", "custo_var")
   missing_params <- setdiff(obrigatorios, names(parametros))
   
@@ -253,7 +241,6 @@ validar_dados_credibilidade <- function(dados, parametros) {
     stop(paste("Parâmetros faltando:", paste(missing_params, collapse = ", ")))
   }
   
-  # Verificar colunas nos dados
   cols_necessarias <- c(
     parametros$grupo_var,
     parametros$tempo_var,
@@ -267,7 +254,6 @@ validar_dados_credibilidade <- function(dados, parametros) {
     stop(paste("Colunas faltando nos dados:", paste(missing_cols, collapse = ", ")))
   }
   
-  # Verificar se tem dados suficientes
   n_grupos <- length(unique(dados[[parametros$grupo_var]]))
   n_periodos <- length(unique(dados[[parametros$tempo_var]]))
   
@@ -287,9 +273,9 @@ validar_dados_credibilidade <- function(dados, parametros) {
   ))
 }
 
-# ------------------------------------------------------------
+# ============================================
 # FUNÇÃO PRINCIPAL
-# ------------------------------------------------------------
+# ============================================
 
 main <- function() {
   args <- commandArgs(trailingOnly = TRUE)
@@ -305,26 +291,10 @@ main <- function() {
   cat("==================================================\n")
   
   tryCatch({
-    # Ler dados de entrada
     dados_json <- fromJSON(input_file)
     
     cat("   📁 Arquivo de entrada lido\n")
     
-    # ESTRUTURA ESPERADA (igual ao a_priori):
-    # {
-    #   "dados": [...],           // array de observações
-    #   "parametros": {          // configuração da análise
-    #     "grupo_var": "regiao",
-    #     "tempo_var": "ano",
-    #     "sinistro_var": "n_sinistros",
-    #     "custo_var": "custo_total",
-    #     "metodo": "Bühlmann-Straub",
-    #     "z_min": 0.3,
-    #     "z_max": 0.9
-    #   }
-    # }
-    
-    # Extrair dados
     if ("dados" %in% names(dados_json)) {
       dados <- as.data.frame(dados_json$dados)
       cat(sprintf("   ✅ Dados extraídos: %d observações\n", nrow(dados)))
@@ -332,7 +302,6 @@ main <- function() {
       stop("❌ Estrutura inválida: campo 'dados' não encontrado")
     }
     
-    # Extrair parâmetros
     if ("parametros" %in% names(dados_json)) {
       parametros <- dados_json$parametros
       cat("   ✅ Parâmetros extraídos\n")
@@ -340,7 +309,6 @@ main <- function() {
       stop("❌ Estrutura inválida: campo 'parametros' não encontrado")
     }
     
-    # Validar parâmetros
     metodo <- parametros$metodo %||% "Bühlmann-Straub"
     grupo_var <- parametros$grupo_var %||% "grupo"
     tempo_var <- parametros$tempo_var %||% "ano"
@@ -352,19 +320,16 @@ main <- function() {
     cat(sprintf("   📈 Configuração: %s, grupo=%s, tempo=%s\n", 
                 metodo, grupo_var, tempo_var))
     
-    # Validar dados
     validacao <- validar_dados_credibilidade(dados, parametros)
     
     if (!validacao$valido) {
       warning("⚠️ Dados podem não ser adequados para análise de credibilidade")
     }
     
-    # Calcular estatísticas por grupo
     estatisticas <- calcular_estatisticas_grupo(
       dados, grupo_var, tempo_var, sinistro_var, custo_var
     )
     
-    # Aplicar método de credibilidade
     cat(sprintf("   🔧 Aplicando método %s...\n", metodo))
     
     if (metodo %in% c("Bühlmann-Straub", "Bühlmann-Straub (com peso)")) {
@@ -376,12 +341,10 @@ main <- function() {
       resultados_metodo <- aplicar_buhlmann_straub_cientifico(estatisticas, grupo_var)
     }
     
-    # Calcular prêmios a posteriori
     premios_resultado <- calcular_premios_posteriori(
       resultados_metodo, estatisticas, grupo_var, z_min, z_max
     )
     
-    # Estatísticas finais
     estat_finais <- list(
       premio_global_priori = round(premios_resultado$media_global, 2),
       premio_medio_posteriori = round(mean(premios_resultado$premios$premio_posteriori, na.rm = TRUE), 2),
@@ -393,7 +356,6 @@ main <- function() {
       grupos_com_ajuste_negativo = sum(premios_resultado$premios$ajuste_percentual < 0, na.rm = TRUE)
     )
     
-    # Calcular impacto financeiro
     impacto_total <- sum(premios_resultado$premios$ajuste_absoluto, na.rm = TRUE)
     impacto_percentual <- if (estat_finais$premio_global_priori > 0 && estat_finais$n_grupos > 0) {
       impacto_total / (estat_finais$premio_global_priori * estat_finais$n_grupos) * 100
@@ -401,13 +363,14 @@ main <- function() {
       0
     }
     
-    # PREPARAR RESULTADO PARA FRONTEND
+    # ============================================
+    # PREPARAR RESULTADO - SEM TABELAS PROBLEMÁTICAS
+    # ============================================
     resultado <- list(
       success = TRUE,
       tipo_operacao = "credibilidade_a_posteriori",
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
       
-      # Metainformação
       metodo_aplicado = metodo,
       parametros_usados = list(
         grupo_var = grupo_var,
@@ -419,23 +382,17 @@ main <- function() {
         z_max = z_max
       ),
       
-      # Validação
       validacao = validacao,
-      
-      # Estatísticas
       estatisticas_gerais = estat_finais,
       
-      # Dados de credibilidade
-      fatores_credibilidade = premios_resultado$premios %>%
+      # 🔥 CONVERTER PARA DATA FRAME ANTES DE JSON
+      fatores_credibilidade = as.data.frame(premios_resultado$premios) %>%
         select(grupo, fator_credibilidade, n_anos, n_sinistros_total),
       
-      # Resultados detalhados
-      premios_calculados = premios_resultado$premios %>%
+      premios_calculados = as.data.frame(premios_resultado$premios) %>%
         mutate(across(where(is.numeric), ~ round(., 2))) %>%
-        arrange(desc(ajuste_percentual)) %>%
-        as.data.frame(),
+        arrange(desc(ajuste_percentual)),
       
-      # Métricas do método
       metricas_credibilidade = list(
         var_entre = round(resultados_metodo$var_entre, 6),
         var_dentro = round(resultados_metodo$var_dentro, 6),
@@ -446,7 +403,6 @@ main <- function() {
                                   if(estat_finais$credibilidade_media > 0.4) "Média" else "Baixa"
       ),
       
-      # Impacto financeiro
       impacto_financeiro = list(
         impacto_total = round(impacto_total, 2),
         impacto_percentual = round(impacto_percentual, 2),
@@ -454,43 +410,39 @@ main <- function() {
         economia_estimada = round(abs(min(impacto_total, 0)), 2)
       ),
       
-      # Para visualizações
+      # 🔥 SUBSTITUIR summary() que retorna table
       visualizacao_dados = list(
-        distribuicao_credibilidade = summary(premios_resultado$premios$fator_credibilidade),
-        distribuicao_ajustes = summary(premios_resultado$premios$ajuste_percentual),
-        top_ajustes = premios_resultado$premios %>%
+        distribuicao_credibilidade = as.list(summary(premios_resultado$premios$fator_credibilidade)),
+        distribuicao_ajustes = as.list(summary(premios_resultado$premios$ajuste_percentual)),
+        top_ajustes = as.data.frame(premios_resultado$premios) %>%
           slice_max(abs(ajuste_percentual), n = 5) %>%
           select(grupo, ajuste_percentual, premio_posteriori)
       ),
       
-      # Recomendações
       recomendacoes = list(
         acoes_prioritarias = if(abs(estat_finais$ajuste_medio_percentual) > 20) 
           "Revisar tarifação - ajustes muito altos" else 
           if(abs(estat_finais$ajuste_medio_percentual) > 10)
           "Monitorar ajustes moderados" else
           "Tarifação estável",
-        grupos_prioritarios = premios_resultado$premios$grupo[1:min(3, nrow(premios_resultado$premios))],
+        grupos_prioritarios = as.character(premios_resultado$premios$grupo[1:min(3, nrow(premios_resultado$premios))]),
         proximos_passos = if(validacao$n_grupos < 3) 
           "Coletar mais dados para melhor estimativa" else
           "Implementar fatores de credibilidade na tarifação"
-      ),
-      
-      # Dados originais (se necessário para visualização)
-      dados_originais = if(nrow(dados) <= 100) dados else NULL
+      )
     )
     
-    # Salvar resultado
-    write_json(resultado, output_file, auto_unbox = TRUE, pretty = TRUE, digits = NA)
+    # 🔥 USAR toJSON com tratamento especial
+    json_output <- toJSON(resultado, auto_unbox = TRUE, pretty = TRUE, 
+                          force = TRUE, digits = NA)
     
-    # Log final
+    write(json_output, output_file)
+    
     cat("\n✅ CREDIBILIDADE CALCULADA COM SUCESSO\n")
     cat("====================================\n")
-    cat(sprintf("   Prêmio global (a priori): R$ %.2f\n", estat_finais$premio_global_priori))
-    cat(sprintf("   Prêmio médio (a posteriori): R$ %.2f\n", estat_finais$premio_medio_posteriori))
+    cat(sprintf("   Prêmio global (a priori): Kz %.2f\n", estat_finais$premio_global_priori))
+    cat(sprintf("   Prêmio médio (a posteriori): Kz %.2f\n", estat_finais$premio_medio_posteriori))
     cat(sprintf("   Credibilidade média: %.1f%%\n", estat_finais$credibilidade_media * 100))
-    cat(sprintf("   Ajuste médio: %.1f%%\n", estat_finais$ajuste_medio_percentual))
-    cat(sprintf("   Impacto financeiro: R$ %.2f (%.1f%%)\n", impacto_total, impacto_percentual))
     cat(sprintf("   Grupos analisados: %d\n", estat_finais$n_grupos))
     
   }, error = function(e) {
@@ -500,11 +452,6 @@ main <- function() {
       success = FALSE,
       error = e$message,
       tipo_operacao = "credibilidade_a_posteriori",
-      recomendacoes = c(
-        "Verifique se as variáveis de agrupamento existem nos dados",
-        "Garanta que os dados têm colunas para: grupo, tempo, sinistros, custos",
-        "Para melhor precisão: mínimo 3 grupos com dados de pelo menos 2 períodos"
-      ),
       timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     )
     
