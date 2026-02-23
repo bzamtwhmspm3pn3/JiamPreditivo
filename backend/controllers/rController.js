@@ -3,7 +3,24 @@ const { execRModel, execRCommand } = require('../services/rRunner');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
-const { v4: uuidv4 } = require('uuid');
+
+// === SOLUÇÃO BLINDADA PARA UUID ===
+let uuidv4;
+try {
+  // Tenta importar como CommonJS
+  ({ v4: uuidv4 } = require('uuid'));
+} catch (e) {
+  console.log('⚠️ uuid CommonJS falhou no rController, usando fallback...');
+  // Fallback simples (apenas para gerar IDs únicos)
+  uuidv4 = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+  console.log('✅ Fallback de UUID ativado no rController');
+}
 
 class RController {
   async executarModelo(req, res) {
@@ -102,48 +119,43 @@ class RController {
           break;
 
         // ====================================================================
-        
+        // DATA MINING (com seus nomes de scripts)
+        // ====================================================================
+        case 'clustering':
+          scriptPath = path.join(scriptDir, 'data_mining/clustering.R');
+          break;
+        case 'associacao':
+          scriptPath = path.join(scriptDir, 'data_mining/associacao.R');
+          break;
+        case 'classificacao':
+          scriptPath = path.join(scriptDir, 'data_mining/classificacao.R');
+          break;
+        case 'reducao':
+          scriptPath = path.join(scriptDir, 'data_mining/reducao.R');
+          break;
+        case 'anomalias':
+          scriptPath = path.join(scriptDir, 'data_mining/anomalias.R');
+          break;
 
-
-
-
-// ====================================================================
-// DATA MINING (com seus nomes de scripts)
-// ====================================================================
-case 'clustering':
-  scriptPath = path.join(scriptDir, 'data_mining/clustering.R');
-  break;
-case 'associacao':
-  scriptPath = path.join(scriptDir, 'data_mining/associacao.R');
-  break;
-case 'classificacao':
-  scriptPath = path.join(scriptDir, 'data_mining/classificacao.R');
-  break;
-case 'reducao':
-  scriptPath = path.join(scriptDir, 'data_mining/reducao.R');
-  break;
-case 'anomalias':
-  scriptPath = path.join(scriptDir, 'data_mining/anomalias.R');
-  break;
-
-// ====================================================================
-// BIG DATA (com seus nomes de scripts)
-// ====================================================================
-case 'spark_job':
-case 'spark':
-  scriptPath = path.join(scriptDir, 'big_data/spark_jobs.R');
-  break;
-case 'hadoop_analise':
-case 'hadoop':
-  scriptPath = path.join(scriptDir, 'big_data/hadoop_analise.R');
-  break;
-case 'streaming':
-  scriptPath = path.join(scriptDir, 'big_data/streaming.R');
-  break;
-case 'sql_distribuido':
-case 'sql':
-  scriptPath = path.join(scriptDir, 'big_data/sql_distribuido.R');
-  break;        case 'bitdata':
+        // ====================================================================
+        // BIG DATA (com seus nomes de scripts)
+        // ====================================================================
+        case 'spark_job':
+        case 'spark':
+          scriptPath = path.join(scriptDir, 'big_data/spark_jobs.R');
+          break;
+        case 'hadoop_analise':
+        case 'hadoop':
+          scriptPath = path.join(scriptDir, 'big_data/hadoop_analise.R');
+          break;
+        case 'streaming':
+          scriptPath = path.join(scriptDir, 'big_data/streaming.R');
+          break;
+        case 'sql_distribuido':
+        case 'sql':
+          scriptPath = path.join(scriptDir, 'big_data/sql_distribuido.R');
+          break;
+        case 'bitdata':
         case 'data_mining':
           // Se vier genérico, tentar detectar pelo parâmetro
           if (parametros?.algoritmo) {
@@ -177,18 +189,18 @@ case 'sql':
         // ====================================================================
         // FALLBACK
         // ====================================================================
-       default:
-  return res.status(400).json({
-    success: false,
-    error: `Modelo '${tipo}' não implementado`,
-    tipos_disponiveis: [
-      'glm', 'multiple', 'logistica', 'arima', 'sarima', 'ets', 'prophet',
-      'random_forest', 'xgboost', 'monte_carlo', 'markov', 'mortality_table',
-      'a_priori', 'a_posteriori', 
-      'clustering', 'associacao', 'classificacao', 'reducao', 'anomalias',
-      'spark_job', 'hadoop_analise', 'streaming', 'sql_distribuido'
-    ]
-  });
+        default:
+          return res.status(400).json({
+            success: false,
+            error: `Modelo '${tipo}' não implementado`,
+            tipos_disponiveis: [
+              'glm', 'multiple', 'logistica', 'arima', 'sarima', 'ets', 'prophet',
+              'random_forest', 'xgboost', 'monte_carlo', 'markov', 'mortality_table',
+              'a_priori', 'a_posteriori', 
+              'clustering', 'associacao', 'classificacao', 'reducao', 'anomalias',
+              'spark_job', 'hadoop_analise', 'streaming', 'sql_distribuido'
+            ]
+          });
       }
 
       // Verificar se o script existe
@@ -269,41 +281,41 @@ case 'sql':
           }
 
           // Ler resultado
-        try {
-  const resultado = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
-  
-  // 🔥 CORREÇÃO: Verificar se os dados estão em resultado ou em resultado.resultado
-  const dadosResultado = resultado.resultado || resultado;
-  
-  console.log('📊 Resultado do R:', {
-    success: resultado.success,
-    temResultado: !!resultado.resultado,
-    temClusters: dadosResultado.clusters ? dadosResultado.clusters.length : 0,
-    temCentroides: dadosResultado.centroides ? dadosResultado.centroides.length : 0,
-    temMetricas: !!dadosResultado.metricas
-  });
+          try {
+            const resultado = JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+            
+            // 🔥 CORREÇÃO: Verificar se os dados estão em resultado ou em resultado.resultado
+            const dadosResultado = resultado.resultado || resultado;
+            
+            console.log('📊 Resultado do R:', {
+              success: resultado.success,
+              temResultado: !!resultado.resultado,
+              temClusters: dadosResultado.clusters ? dadosResultado.clusters.length : 0,
+              temCentroides: dadosResultado.centroides ? dadosResultado.centroides.length : 0,
+              temMetricas: !!dadosResultado.metricas
+            });
 
-  // Adicionar metadados
-  resultado.timestamp = new Date().toISOString();
-  resultado.tipo_modelo = tipo;
-  resultado.n_registros = dados.length;
+            // Adicionar metadados
+            resultado.timestamp = new Date().toISOString();
+            resultado.tipo_modelo = tipo;
+            resultado.n_registros = dados.length;
 
-  // Limpar output
-  try {
-    fs.unlinkSync(outputFile);
-  } catch (e) {
-    console.warn('⚠️  Não foi possível limpar output:', e.message);
-  }
+            // Limpar output
+            try {
+              fs.unlinkSync(outputFile);
+            } catch (e) {
+              console.warn('⚠️  Não foi possível limpar output:', e.message);
+            }
 
-  console.log('✅ Modelo executado com sucesso');
-  
-  resolve({
-    success: true,
-    ...resultado  // Mantém a estrutura original com resultado.resultado
-  });
+            console.log('✅ Modelo executado com sucesso');
+            
+            resolve({
+              success: true,
+              ...resultado  // Mantém a estrutura original com resultado.resultado
+            });
 
-} catch (parseError) {
-  console.error('❌ Erro parseando resultado:', parseError.message);
+          } catch (parseError) {
+            console.error('❌ Erro parseando resultado:', parseError.message);
             
             // Limpar output
             try {
@@ -611,84 +623,84 @@ case 'sql':
         },
 
         // ====================================================================
-// DATA MINING (NOVOS)
-// ====================================================================
-{
-  id: 'clustering',
-  nome: 'Clustering (Agrupamento)',
-  descricao: 'Algoritmos de agrupamento: K-Means, DBSCAN, Hierárquico - DADOS REAIS',
-  categoria: 'data_mining',
-  parametros: ['algoritmo', 'n_clusters', 'metodo_linkage'],
-  script: 'data_mining/clustering.R'
-},
-{
-  id: 'associacao',
-  nome: 'Associação (Regras)',
-  descricao: 'Regras de associação: Apriori, FP-Growth - DADOS REAIS',
-  categoria: 'data_mining',
-  parametros: ['algoritmo', 'suporte_min', 'confianca_min'],
-  script: 'data_mining/associacao.R'
-},
-{
-  id: 'classificacao',
-  nome: 'Classificação',
-  descricao: 'Algoritmos de classificação supervisionada - DADOS REAIS',
-  categoria: 'data_mining',
-  parametros: ['algoritmo', 'target', 'features'],
-  script: 'data_mining/classificacao.R'
-},
-{
-  id: 'reducao',
-  nome: 'Redução de Dimensionalidade',
-  descricao: 'PCA, t-SNE, UMAP - DADOS REAIS',
-  categoria: 'data_mining',
-  parametros: ['algoritmo', 'n_componentes'],
-  script: 'data_mining/reducao.R'
-},
-{
-  id: 'anomalias',
-  nome: 'Detecção de Anomalias',
-  descricao: 'Isolation Forest, LOF, One-Class SVM - DADOS REAIS',
-  categoria: 'data_mining',
-  parametros: ['algoritmo', 'contamination'],
-  script: 'data_mining/anomalias.R'
-},
+        // DATA MINING (NOVOS)
+        // ====================================================================
+        {
+          id: 'clustering',
+          nome: 'Clustering (Agrupamento)',
+          descricao: 'Algoritmos de agrupamento: K-Means, DBSCAN, Hierárquico - DADOS REAIS',
+          categoria: 'data_mining',
+          parametros: ['algoritmo', 'n_clusters', 'metodo_linkage'],
+          script: 'data_mining/clustering.R'
+        },
+        {
+          id: 'associacao',
+          nome: 'Associação (Regras)',
+          descricao: 'Regras de associação: Apriori, FP-Growth - DADOS REAIS',
+          categoria: 'data_mining',
+          parametros: ['algoritmo', 'suporte_min', 'confianca_min'],
+          script: 'data_mining/associacao.R'
+        },
+        {
+          id: 'classificacao',
+          nome: 'Classificação',
+          descricao: 'Algoritmos de classificação supervisionada - DADOS REAIS',
+          categoria: 'data_mining',
+          parametros: ['algoritmo', 'target', 'features'],
+          script: 'data_mining/classificacao.R'
+        },
+        {
+          id: 'reducao',
+          nome: 'Redução de Dimensionalidade',
+          descricao: 'PCA, t-SNE, UMAP - DADOS REAIS',
+          categoria: 'data_mining',
+          parametros: ['algoritmo', 'n_componentes'],
+          script: 'data_mining/reducao.R'
+        },
+        {
+          id: 'anomalias',
+          nome: 'Detecção de Anomalias',
+          descricao: 'Isolation Forest, LOF, One-Class SVM - DADOS REAIS',
+          categoria: 'data_mining',
+          parametros: ['algoritmo', 'contamination'],
+          script: 'data_mining/anomalias.R'
+        },
 
-// ====================================================================
-// BIG DATA (NOVOS)
-// ====================================================================
-{
-  id: 'spark_job',
-  nome: 'Spark Jobs',
-  descricao: 'Processamento distribuído com Apache Spark - DADOS REAIS',
-  categoria: 'big_data',
-  parametros: ['job_type', 'colunas', 'n_particioes'],
-  script: 'big_data/spark_jobs.R'
-},
-{
-  id: 'hadoop_analise',
-  nome: 'Hadoop Análise',
-  descricao: 'Análise estilo MapReduce - DADOS REAIS',
-  categoria: 'big_data',
-  parametros: ['operacao', 'n_mappers', 'n_reducers'],
-  script: 'big_data/hadoop_analise.R'
-},
-{
-  id: 'streaming',
-  nome: 'Streaming',
-  descricao: 'Processamento de dados em tempo real - DADOS REAIS',
-  categoria: 'big_data',
-  parametros: ['window_size', 'slide_size', 'operacao'],
-  script: 'big_data/streaming.R'
-},
-{
-  id: 'sql_distribuido',
-  nome: 'SQL Distribuído',
-  descricao: 'Consultas SQL em dados distribuídos - DADOS REAIS',
-  categoria: 'big_data',
-  parametros: ['query', 'n_particioes'],
-  script: 'big_data/sql_distribuido.R'
-}
+        // ====================================================================
+        // BIG DATA (NOVOS)
+        // ====================================================================
+        {
+          id: 'spark_job',
+          nome: 'Spark Jobs',
+          descricao: 'Processamento distribuído com Apache Spark - DADOS REAIS',
+          categoria: 'big_data',
+          parametros: ['job_type', 'colunas', 'n_particioes'],
+          script: 'big_data/spark_jobs.R'
+        },
+        {
+          id: 'hadoop_analise',
+          nome: 'Hadoop Análise',
+          descricao: 'Análise estilo MapReduce - DADOS REAIS',
+          categoria: 'big_data',
+          parametros: ['operacao', 'n_mappers', 'n_reducers'],
+          script: 'big_data/hadoop_analise.R'
+        },
+        {
+          id: 'streaming',
+          nome: 'Streaming',
+          descricao: 'Processamento de dados em tempo real - DADOS REAIS',
+          categoria: 'big_data',
+          parametros: ['window_size', 'slide_size', 'operacao'],
+          script: 'big_data/streaming.R'
+        },
+        {
+          id: 'sql_distribuido',
+          nome: 'SQL Distribuído',
+          descricao: 'Consultas SQL em dados distribuídos - DADOS REAIS',
+          categoria: 'big_data',
+          parametros: ['query', 'n_particioes'],
+          script: 'big_data/sql_distribuido.R'
+        }
       ];
 
       // Verificar quais scripts realmente existem
