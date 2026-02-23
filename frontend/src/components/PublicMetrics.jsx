@@ -1,5 +1,8 @@
-// src/components/PublicMetrics.jsx
+// src/components/PublicMetrics.jsx - VERSÃO CORRIGIDA COM PROXY
 import React, { useState, useEffect, useCallback } from 'react';
+
+// 🔥 Usar a mesma variável de ambiente do sistema
+const API_URL = process.env.REACT_APP_API_URL || 'https://jiampreditivo.onrender.com/api';
 
 export default function PublicMetrics({ lang }) {
   const [metrics, setMetrics] = useState({
@@ -62,11 +65,11 @@ export default function PublicMetrics({ lang }) {
 
   const t = translations[lang] || translations.pt;
 
-  // 🔷 BNA - Banco Nacional de Angola (câmbio oficial)
+  // 🔷 BNA - via proxy
   const fetchCambioBNA = useCallback(async () => {
     try {
-      // API oficial do BNA (substituir pela URL real quando disponível)
-      const response = await fetch('https://www.bna.ao/api/taxas-cambio');
+      // Usar o proxy em vez da chamada direta
+      const response = await fetch(`${API_URL}/proxy/bna/taxas-cambio`);
       
       if (response.ok) {
         const data = await response.json();
@@ -88,8 +91,8 @@ export default function PublicMetrics({ lang }) {
         };
       }
       
-      // Fallback: Trading Economics (dados do BNA)
-      const teResponse = await fetch('https://api.tradingeconomics.com/forex?symbols=USDAOA:cur,EURAOA:cur&c=guest:guest');
+      // Fallback: Trading Economics via proxy
+      const teResponse = await fetch(`${API_URL}/proxy/tradingeco/forex?symbols=USDAOA:cur,EURAOA:cur&c=guest:guest`);
       if (teResponse.ok) {
         const data = await teResponse.json();
         const agora = new Date().toISOString();
@@ -128,13 +131,12 @@ export default function PublicMetrics({ lang }) {
         atualizado: new Date().toISOString()
       }
     };
-  }, [t.bna, t.tradingEconomics]);
+  }, [t.bna, t.tradingEconomics, API_URL]);
 
-  // 🔷 INE - Instituto Nacional de Estatística (inflação)
+  // 🔷 INE - via proxy
   const fetchInflacaoINE = useCallback(async () => {
     try {
-      // API do INE (quando disponível)
-      const response = await fetch('https://www.ine.gov.ao/api/inflacao');
+      const response = await fetch(`${API_URL}/proxy/ine/inflacao`);
       
       if (response.ok) {
         const data = await response.json();
@@ -147,8 +149,8 @@ export default function PublicMetrics({ lang }) {
         };
       }
       
-      // Fallback: Trading Economics com dados do INE
-      const teResponse = await fetch('https://api.tradingeconomics.com/country/angola?c=guest:guest');
+      // Fallback: Trading Economics via proxy
+      const teResponse = await fetch(`${API_URL}/proxy/tradingeco/country/angola?c=guest:guest`);
       if (teResponse.ok) {
         const data = await teResponse.json();
         return {
@@ -171,13 +173,12 @@ export default function PublicMetrics({ lang }) {
       url: 'https://www.ine.gov.ao',
       atualizado: new Date().toISOString()
     };
-  }, [t.ine, t.tradingEconomics]);
+  }, [t.ine, t.tradingEconomics, API_URL]);
 
-  // 🔷 FMI - Fundo Monetário Internacional (PIB)
+  // 🔷 FMI - via proxy
   const fetchPIBFMI = useCallback(async () => {
     try {
-      // API do FMI
-      const response = await fetch('https://www.imf.org/external/datamapper/api/v1/NGDP_RPCH/AGO');
+      const response = await fetch(`${API_URL}/proxy/imf/NGDP_RPCH/AGO`);
       
       if (response.ok) {
         const data = await response.json();
@@ -203,13 +204,12 @@ export default function PublicMetrics({ lang }) {
       url: 'https://www.imf.org/pt/Countries/AGO',
       atualizado: new Date().toISOString()
     };
-  }, [t.fmi]);
+  }, [t.fmi, API_URL]);
 
-  // 🔷 INE - Instituto Nacional de Estatística (desemprego)
+  // 🔷 INE - via proxy (desemprego)
   const fetchDesempregoINE = useCallback(async () => {
     try {
-      // API do INE (quando disponível)
-      const response = await fetch('https://www.ine.gov.ao/api/desemprego');
+      const response = await fetch(`${API_URL}/proxy/ine/desemprego`);
       
       if (response.ok) {
         const data = await response.json();
@@ -233,12 +233,12 @@ export default function PublicMetrics({ lang }) {
       url: 'https://www.ine.gov.ao',
       atualizado: new Date().toISOString()
     };
-  }, [t.ine]);
+  }, [t.ine, API_URL]);
 
-  // 🔷 Trading Economics (petróleo Brent)
+  // 🔷 Trading Economics - via proxy (petróleo)
   const fetchPetroleoTE = useCallback(async () => {
     try {
-      const response = await fetch('https://api.tradingeconomics.com/commodity/brent-crude-oil?c=guest:guest');
+      const response = await fetch(`${API_URL}/proxy/tradingeco/commodity/brent-crude-oil?c=guest:guest`);
       
       if (response.ok) {
         const data = await response.json();
@@ -262,7 +262,7 @@ export default function PublicMetrics({ lang }) {
       url: 'https://tradingeconomics.com/commodity/brent-crude-oil',
       atualizado: new Date().toISOString()
     };
-  }, [t.tradingEconomics]);
+  }, [t.tradingEconomics, API_URL]);
 
   // 🔄 Função principal para buscar todos os dados
   const fetchDadosReais = useCallback(async () => {
