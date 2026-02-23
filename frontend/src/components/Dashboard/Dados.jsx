@@ -1,4 +1,4 @@
-// src/components/Dashboard/Dados.jsx - VERSÃO CORRIGIDA COM TODOS OS DADOS
+﻿// src/components/Dashboard/Dados.jsx - VERSÃƒO CORRIGIDA COM TODOS OS DADOS
 import React, { useState, useMemo, useEffect } from "react";
 import axios from "axios";
 import { 
@@ -39,9 +39,9 @@ export default function Dados({ dados, onUpload }) {
     }));
   }, [dados?.colunas]);
 
-  // Dados para a tabela - CORREÇÃO CRÍTICA AQUI
+  // Dados para a tabela - CORREÃ‡ÃƒO CRÃTICA AQUI
   const tableData = useMemo(() => {
-    console.log('🔍 ANALISANDO DADOS PARA TABELA:');
+    console.log('ðŸ” ANALISANDO DADOS PARA TABELA:');
     console.log('- Dados recebidos:', dados);
     console.log('- Tem dados_completos?', !!dados?.dados_completos);
     console.log('- Tamanho dados_completos:', dados?.dados_completos?.length);
@@ -52,31 +52,31 @@ export default function Dados({ dados, onUpload }) {
     
     // PRIORIDADE 1: Dados completos da API
     if (dados?.dados_completos && Array.isArray(dados.dados_completos)) {
-      console.log(`✅ USANDO dados_completos: ${dados.dados_completos.length} registros`);
+      console.log(`âœ… USANDO dados_completos: ${dados.dados_completos.length} registros`);
       return dados.dados_completos;
     }
     
-    // PRIORIDADE 2: Se total_completo é true, então amostra = todos os dados
+    // PRIORIDADE 2: Se total_completo Ã© true, entÃ£o amostra = todos os dados
     if (dados?.total_completo && dados?.amostra && Array.isArray(dados.amostra)) {
-      console.log(`✅ total_completo=true, usando amostra como todos: ${dados.amostra.length} registros`);
+      console.log(`âœ… total_completo=true, usando amostra como todos: ${dados.amostra.length} registros`);
       return dados.amostra;
     }
     
     // PRIORIDADE 3: Amostra normal
     if (dados?.amostra && Array.isArray(dados.amostra)) {
-      console.log(`⚠️ Usando amostra: ${dados.amostra.length} registros`);
+      console.log(`âš ï¸ Usando amostra: ${dados.amostra.length} registros`);
       return dados.amostra;
     }
     
-    console.log('❌ Nenhum dado válido encontrado');
+    console.log('âŒ Nenhum dado vÃ¡lido encontrado');
     return [];
   }, [dados]);
 
   // Log quando tableData muda
   useEffect(() => {
     if (tableData.length > 0) {
-      console.log(`📈 TableData atualizado: ${tableData.length} registros`);
-      console.log(`📈 Primeiros 3 registros:`, tableData.slice(0, 3));
+      console.log(`ðŸ“ˆ TableData atualizado: ${tableData.length} registros`);
+      console.log(`ðŸ“ˆ Primeiros 3 registros:`, tableData.slice(0, 3));
     }
   }, [tableData]);
 
@@ -101,7 +101,7 @@ export default function Dados({ dados, onUpload }) {
         progresso: 30
       });
       
-      console.log('📤 Enviando arquivo para processamento...');
+      console.log('ðŸ“¤ Enviando arquivo para processamento...');
       const response = await axios.post(`${API_URL}/api/r/processamento/upload`, formData, {
         headers: { 
           'Content-Type': 'multipart/form-data'
@@ -124,8 +124,8 @@ export default function Dados({ dados, onUpload }) {
       });
       
       const result = response.data;
-      console.log('✅ RESPOSTA DA API:', result);
-      console.log('🔍 ESTRUTURA DOS DADOS:');
+      console.log('âœ… RESPOSTA DA API:', result);
+      console.log('ðŸ” ESTRUTURA DOS DADOS:');
       console.log('- Dados.registros:', result.dados?.registros);
       console.log('- Dados.variaveis:', result.dados?.variaveis);
       console.log('- Dados.dados_completos?', !!result.dados?.dados_completos);
@@ -137,13 +137,13 @@ export default function Dados({ dados, onUpload }) {
         throw new Error(result.error || 'Erro no processamento');
       }
       
-      // CORREÇÃO CRÍTICA: garantir que dados_completos contenha todos os dados
+      // CORREÃ‡ÃƒO CRÃTICA: garantir que dados_completos contenha todos os dados
       const dadosFormatados = {
         registros: result.dados?.registros || 0,
         variaveis: result.dados?.variaveis || 0,
         nomeArquivo: result.arquivo?.nome || file.name,
         colunas: result.dados?.colunas || [],
-        // SE total_completo=true, então dados_completos deve ter todos os dados
+        // SE total_completo=true, entÃ£o dados_completos deve ter todos os dados
         dados_completos: result.dados?.dados_completos || result.dados?.amostra || [],
         amostra: result.dados?.amostra || [],
         total_completo: result.dados?.total_completo || false,
@@ -152,19 +152,19 @@ export default function Dados({ dados, onUpload }) {
         analise: result.analise
       };
       
-      console.log(`📊 Dados formatados:`);
+      console.log(`ðŸ“Š Dados formatados:`);
       console.log(`- Registros: ${dadosFormatados.registros}`);
       console.log(`- Dados completos: ${dadosFormatados.dados_completos?.length || 0} registros`);
       console.log(`- Amostra: ${dadosFormatados.amostra?.length || 0} registros`);
       console.log(`- Total completo: ${dadosFormatados.total_completo}`);
       
-      // VALIDAÇÃO CRÍTICA: se total_completo=true, mas dados_completos está vazio
+      // VALIDAÃ‡ÃƒO CRÃTICA: se total_completo=true, mas dados_completos estÃ¡ vazio
       if (dadosFormatados.total_completo && dadosFormatados.dados_completos?.length === 0) {
-        console.warn('⚠️ AVISO: total_completo=true mas dados_completos vazio!');
-        console.warn('⚠️ Usando amostra como fallback...');
+        console.warn('âš ï¸ AVISO: total_completo=true mas dados_completos vazio!');
+        console.warn('âš ï¸ Usando amostra como fallback...');
         // Se amostra tem todos os dados, usar amostra
         if (dadosFormatados.amostra?.length === dadosFormatados.registros) {
-          console.log(`✅ Amostra tem todos os ${dadosFormatados.registros} registros`);
+          console.log(`âœ… Amostra tem todos os ${dadosFormatados.registros} registros`);
           dadosFormatados.dados_completos = dadosFormatados.amostra;
         }
       }
@@ -177,9 +177,9 @@ export default function Dados({ dados, onUpload }) {
       onUpload(dadosFormatados);
       
       setSucesso({
-        title: "Upload Concluído! ✅",
+        title: "Upload ConcluÃ­do! âœ…",
         message: `Arquivo "${file.name}" processado com sucesso`,
-        details: `${dadosFormatados.registros.toLocaleString()} registros • ${dadosFormatados.variaveis} variáveis`,
+        details: `${dadosFormatados.registros.toLocaleString()} registros â€¢ ${dadosFormatados.variaveis} variÃ¡veis`,
         performance: result.performance
       });
       
@@ -193,12 +193,12 @@ export default function Dados({ dados, onUpload }) {
       }, 2000);
       
     } catch (err) {
-      console.error('❌ ERRO NO UPLOAD:', err);
+      console.error('âŒ ERRO NO UPLOAD:', err);
       const errorMsg = err.response?.data?.message || err.message || 'Erro desconhecido';
       const detalhes = err.response?.data?.detalhes || err.response?.data?.error;
       
       setError({
-        title: "Erro no Processamento ❌",
+        title: "Erro no Processamento âŒ",
         message: errorMsg,
         details: detalhes
       });
@@ -217,8 +217,8 @@ export default function Dados({ dados, onUpload }) {
       
       if (!validExtensions.includes(fileExtension)) {
         setError({
-          title: "Formato Inválido",
-          message: `Formato ${fileExtension} não suportado. Use: CSV, Excel ou JSON`
+          title: "Formato InvÃ¡lido",
+          message: `Formato ${fileExtension} nÃ£o suportado. Use: CSV, Excel ou JSON`
         });
         return;
       }
@@ -226,7 +226,7 @@ export default function Dados({ dados, onUpload }) {
       if (file.size > 100 * 1024 * 1024) {
         setError({
           title: "Arquivo Muito Grande",
-          message: "Tamanho máximo: 100MB. Seu arquivo: " + (file.size / 1024 / 1024).toFixed(2) + "MB"
+          message: "Tamanho mÃ¡ximo: 100MB. Seu arquivo: " + (file.size / 1024 / 1024).toFixed(2) + "MB"
         });
         return;
       }
@@ -254,15 +254,15 @@ export default function Dados({ dados, onUpload }) {
     if (!tableData?.length) {
       setError({ 
         title: "Sem Dados", 
-        message: "Não há dados para exportar" 
+        message: "NÃ£o hÃ¡ dados para exportar" 
       });
       return;
     }
     
     if (!dados?.colunas?.length) {
       setError({ 
-        title: "Erro na Exportação", 
-        message: "Colunas não definidas" 
+        title: "Erro na ExportaÃ§Ã£o", 
+        message: "Colunas nÃ£o definidas" 
       });
       return;
     }
@@ -303,7 +303,7 @@ export default function Dados({ dados, onUpload }) {
     document.body.removeChild(link);
     
     setSucesso({
-      title: "Exportação Concluída",
+      title: "ExportaÃ§Ã£o ConcluÃ­da",
       message: `Arquivo ${fileName} baixado com sucesso`,
       details: `${tableData.length.toLocaleString()} registros exportados`
     });
@@ -322,7 +322,7 @@ export default function Dados({ dados, onUpload }) {
         subInfo: tableData.length > 0 ? `${tableData.length.toLocaleString()} carregados` : null
       },
       {
-        title: "Variáveis",
+        title: "VariÃ¡veis",
         value: dados.variaveis?.toString() || "0",
         icon: <FaTable className="text-white text-lg" />,
         color: "green",
@@ -404,7 +404,7 @@ export default function Dados({ dados, onUpload }) {
             onDrop={handleDrop}
           >
             <div className="mb-4">
-              <div className="text-5xl mb-4">📊</div>
+              <div className="text-5xl mb-4">ðŸ“Š</div>
               <p className="text-gray-700 text-lg font-medium mb-2">
                 Arraste e solte seu arquivo aqui
               </p>
@@ -437,16 +437,16 @@ export default function Dados({ dados, onUpload }) {
               Formatos suportados: CSV, Excel (XLSX, XLS), JSON, TXT
             </p>
             <p className="text-sm text-gray-500">
-              Tamanho máximo: 100MB
+              Tamanho mÃ¡ximo: 100MB
             </p>
             
             {selectedFile && (
               <div className="mt-4 p-3 bg-gray-50 rounded-lg inline-block">
                 <div className="flex items-center gap-3">
                   <div className="text-blue-600">
-                    {selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls') ? '📊' :
-                     selectedFile.name.endsWith('.csv') ? '📄' :
-                     selectedFile.name.endsWith('.json') ? '🔧' : '📁'}
+                    {selectedFile.name.endsWith('.xlsx') || selectedFile.name.endsWith('.xls') ? 'ðŸ“Š' :
+                     selectedFile.name.endsWith('.csv') ? 'ðŸ“„' :
+                     selectedFile.name.endsWith('.json') ? 'ðŸ”§' : 'ðŸ“'}
                   </div>
                   <div className="text-left">
                     <p className="font-medium text-gray-800 truncate max-w-xs">
@@ -496,7 +496,7 @@ export default function Dados({ dados, onUpload }) {
                 onClick={() => setError(null)}
                 className="text-red-400 hover:text-red-600"
               >
-                ✕
+                âœ•
               </button>
             </div>
           </div>
@@ -529,7 +529,7 @@ export default function Dados({ dados, onUpload }) {
                 onClick={() => setSucesso(null)}
                 className="text-green-400 hover:text-green-600"
               >
-                ✕
+                âœ•
               </button>
             </div>
           </div>
@@ -540,7 +540,7 @@ export default function Dados({ dados, onUpload }) {
           <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
               <FaInfoCircle className="text-blue-500" />
-              <h3 className="font-medium text-blue-800">Informações do Dataset</h3>
+              <h3 className="font-medium text-blue-800">InformaÃ§Ãµes do Dataset</h3>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div>
@@ -560,13 +560,13 @@ export default function Dados({ dados, onUpload }) {
                 <span className="text-blue-600">Status:</span>{' '}
                 <span className={`font-medium ${dados.total_completo ? 'text-green-600' : 'text-yellow-600'}`}>
                   {dados.total_completo ? 'Completo' : 'Amostra'}
-                  {dados.total_completo && tableData.length < dados.registros && ' (mas não carregou todos)'}
+                  {dados.total_completo && tableData.length < dados.registros && ' (mas nÃ£o carregou todos)'}
                 </span>
               </div>
             </div>
             {dados.total_completo && tableData.length < dados.registros && (
               <div className="mt-2 text-xs text-yellow-700 bg-yellow-100 p-2 rounded">
-                ⚠️ A API diz que é "Completo" mas apenas {tableData.length} de {dados.registros} registros foram carregados.
+                âš ï¸ A API diz que Ã© "Completo" mas apenas {tableData.length} de {dados.registros} registros foram carregados.
                 Isso pode ser um erro na resposta da API.
               </div>
             )}
@@ -589,7 +589,7 @@ export default function Dados({ dados, onUpload }) {
             <div className="p-6 border-b border-gray-200">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
                 <div>
-                  <h2 className="text-xl font-bold text-gray-800 mb-1">Visualização dos Dados</h2>
+                  <h2 className="text-xl font-bold text-gray-800 mb-1">VisualizaÃ§Ã£o dos Dados</h2>
                   <div className="flex items-center gap-4 text-sm text-gray-600">
                     <div className="flex items-center gap-2">
                       <FaTable />
@@ -627,7 +627,7 @@ export default function Dados({ dados, onUpload }) {
                       <p className="text-yellow-700 text-sm mt-1">
                         {dados.total_completo 
                           ? 'A API indica que deveriam ser todos os dados, mas apenas uma amostra foi enviada.'
-                          : 'A API enviou apenas uma amostra dos dados. Para todos os registros, verifique a configuração da API.'
+                          : 'A API enviou apenas uma amostra dos dados. Para todos os registros, verifique a configuraÃ§Ã£o da API.'
                         }
                       </p>
                     </div>
@@ -647,7 +647,7 @@ export default function Dados({ dados, onUpload }) {
               </div>
             ) : (
               <div className="text-center py-16">
-                <div className="text-6xl text-gray-300 mb-4">📊</div>
+                <div className="text-6xl text-gray-300 mb-4">ðŸ“Š</div>
                 <p className="text-gray-600 text-lg mb-2">Nenhum dado para exibir</p>
                 <p className="text-gray-500">
                   Carregue um arquivo para visualizar os dados
