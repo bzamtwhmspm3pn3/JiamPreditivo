@@ -1,4 +1,4 @@
-// src/components/Dashboard/relatorios/RelatorioActuarial.jsx
+﻿// src/components/Dashboard/relatorios/RelatorioActuarial.jsx
 import React, { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { motion } from 'framer-motion';
 import {

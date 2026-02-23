@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 export const Dialog = ({ children, open, onOpenChange, ...props }) => {
   if (!open) return null;

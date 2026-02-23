@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/APosteriori.jsx - VERSÃO CORRIGIDA
+﻿// src/components/Dashboard/Actuarial/APosteriori.jsx - VERSÃO CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';

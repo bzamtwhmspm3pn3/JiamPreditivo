@@ -1,4 +1,4 @@
-// src/components/DataTable/DataTable.jsx - VERSÃO SIMPLIFICADA E FUNCIONAL
+﻿// src/components/DataTable/DataTable.jsx - VERSÃO SIMPLIFICADA E FUNCIONAL
 import React, { useMemo, useState } from 'react';
 import { useTable, useSortBy, usePagination, useFilters } from 'react-table';
 import { 

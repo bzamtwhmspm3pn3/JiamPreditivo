@@ -1,4 +1,4 @@
-// src/components/StatCard/StatCard.jsx
+﻿// src/components/StatCard/StatCard.jsx
 import React from 'react';
 import { FaDatabase, FaChartBar, FaTable, FaFileExcel, FaFileCsv, FaFileAlt } from 'react-icons/fa';
 

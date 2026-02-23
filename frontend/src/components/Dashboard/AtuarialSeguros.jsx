@@ -1,4 +1,4 @@
-// src/components/Dashboard/AtuarialSeguros.jsx - VERSÃO FUNCIONAL E LIMPA
+﻿// src/components/Dashboard/AtuarialSeguros.jsx - VERSÃO FUNCIONAL E LIMPA
 import React, { useState, useEffect, useMemo } from "react";
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';

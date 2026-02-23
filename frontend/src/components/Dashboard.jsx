@@ -1,4 +1,4 @@
-// src/components/Dashboard.jsx
+﻿// src/components/Dashboard.jsx
 import React, { useState, useEffect } from "react";
 import Profile from "./Profile";
 import AbaAjuda from "./AbaAjuda";

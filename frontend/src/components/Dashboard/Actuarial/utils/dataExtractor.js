@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/utils/dataExtractor.js
+﻿// src/components/Dashboard/Actuarial/utils/dataExtractor.js
 /**
  * Utilitário para extrair dados de forma consistente em todos os componentes atuariais
  */

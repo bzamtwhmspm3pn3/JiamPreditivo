@@ -1,4 +1,4 @@
-// src/components/Dashboard/relatorios/RelatorioMonteCarlo.jsx
+﻿// src/components/Dashboard/relatorios/RelatorioMonteCarlo.jsx
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {

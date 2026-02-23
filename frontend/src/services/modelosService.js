@@ -1,4 +1,4 @@
-// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\services\modelosService.js
+﻿// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\services\modelosService.js
 import api from './api';
 
 const ModelosService = {

@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/GLMDebug.jsx
+﻿// src/components/Dashboard/Actuarial/GLMDebug.jsx
 import React from 'react';
 import { useGLMModels } from '../../../contexts/GLMModelsContext';
 import Card from '../componentes/Card';

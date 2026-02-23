@@ -1,4 +1,4 @@
-// src/components/Dashboard/relatorios/RelatorioSegurosVida.jsx
+﻿// src/components/Dashboard/relatorios/RelatorioSegurosVida.jsx
 import React, { useState, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,

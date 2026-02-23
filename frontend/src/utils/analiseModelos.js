@@ -1,4 +1,4 @@
-// src/utils/analiseModelos.js - VERSÃO CORRIGIDA
+﻿// src/utils/analiseModelos.js - VERSÃO CORRIGIDA
 
 // =============================================
 // FUNÇÕES AUXILIARES

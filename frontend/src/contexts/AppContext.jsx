@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+﻿import React, { createContext, useContext, useState } from 'react';
 import { Cpu, Database, BarChart2, Users } from 'lucide-react';
 
 // --- Cores globais ---

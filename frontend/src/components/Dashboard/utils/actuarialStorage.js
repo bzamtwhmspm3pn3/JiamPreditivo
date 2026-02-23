@@ -1,4 +1,4 @@
-// src/components/Dashboard/utils/actuarialStorage.js - VERSÃO COMPLETA CORRIGIDA
+﻿// src/components/Dashboard/utils/actuarialStorage.js - VERSÃO COMPLETA CORRIGIDA
 
 const STORAGE_KEYS = {
   MODELOS_GLM: 'modelosGLM_Atuarial',

@@ -1,4 +1,4 @@
-// ResultadoProphet.jsx
+﻿// ResultadoProphet.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 

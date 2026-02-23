@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { ResponsiveContainer, LineChart, Line } from "recharts";
 
 // Componente MiniChart

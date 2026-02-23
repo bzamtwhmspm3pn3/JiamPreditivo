@@ -1,4 +1,4 @@
-// src/theme/QuantumTheme.jsx
+﻿// src/theme/QuantumTheme.jsx
 import React, { useEffect, useRef } from 'react';
 import './QuantumTheme.css';
 

@@ -1,4 +1,4 @@
-// src/components/PublicMetrics.jsx - VERSÃO CORRIGIDA COM PROXY
+﻿// src/components/PublicMetrics.jsx - VERSÃO CORRIGIDA COM PROXY
 import React, { useState, useEffect, useCallback } from 'react';
 
 // 🔥 Usar a mesma variável de ambiente do sistema

@@ -1,4 +1,4 @@
-// src/components/Dashboard/relatorios/RelatorioBigData.jsx
+﻿// src/components/Dashboard/relatorios/RelatorioBigData.jsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';

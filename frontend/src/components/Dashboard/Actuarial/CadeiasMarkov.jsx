@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/CadeiasMarkov.jsx - VERSÃO CORRIGIDA (enviando como "markov")
+﻿// src/components/Dashboard/Actuarial/CadeiasMarkov.jsx - VERSÃO CORRIGIDA (enviando como "markov")
 import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';

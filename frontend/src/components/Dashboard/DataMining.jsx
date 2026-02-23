@@ -1,4 +1,4 @@
-// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\components\Dashboard\DataMining.jsx
+﻿// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\components\Dashboard\DataMining.jsx
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 

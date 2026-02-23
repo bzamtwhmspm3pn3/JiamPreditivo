@@ -1,4 +1,4 @@
-// contexts/TranslationContext.jsx
+﻿// contexts/TranslationContext.jsx
 import { createContext, useContext, useState } from "react";
 import translations from "../data/translations.json";
 

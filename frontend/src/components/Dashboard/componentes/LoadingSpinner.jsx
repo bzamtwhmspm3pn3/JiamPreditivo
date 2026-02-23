@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 export default function LoadingSpinner({ size = 'md', color = 'currentColor' }) {
   const sizeClasses = {

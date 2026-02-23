@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+﻿import { useState, useRef, useEffect } from "react";
 import { 
   // Ícones principais
   X, Send, Database, Cpu, ChevronDown, ChevronUp, Loader2, 

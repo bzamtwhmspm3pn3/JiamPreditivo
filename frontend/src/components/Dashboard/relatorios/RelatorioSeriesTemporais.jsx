@@ -1,4 +1,4 @@
-// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\components\Dashboard\relatorios\RelatorioSeriesTemporais.jsx
+﻿// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\components\Dashboard\relatorios\RelatorioSeriesTemporais.jsx
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';

@@ -1,4 +1,4 @@
-import logo from '../assets/favicon-32x32.png';
+﻿import logo from '../assets/favicon-32x32.png';
 
 export function Header() {
   return (

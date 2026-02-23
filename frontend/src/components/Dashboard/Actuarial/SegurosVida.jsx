@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/SegurosVida.jsx - VERSÃO CORRIGIDA COM ENVIO AOS RELATÓRIOS
+﻿// src/components/Dashboard/Actuarial/SegurosVida.jsx - VERSÃO CORRIGIDA COM ENVIO AOS RELATÓRIOS
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';

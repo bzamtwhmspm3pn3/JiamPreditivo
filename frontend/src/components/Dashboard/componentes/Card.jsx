@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 export const Card = ({ children, className = "", ...props }) => (
   <div className={`bg-white rounded-xl shadow-lg border border-gray-200 ${className}`} {...props}>

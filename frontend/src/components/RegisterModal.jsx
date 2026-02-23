@@ -1,4 +1,4 @@
-// src/components/RegisterModal.jsx
+﻿// src/components/RegisterModal.jsx
 import React, { useState } from "react";
 import { registerUser } from "../services/auth";
 

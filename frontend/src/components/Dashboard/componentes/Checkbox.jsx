@@ -1,4 +1,4 @@
-// componentes/Checkbox.js
+﻿// componentes/Checkbox.js
 import React from 'react';
 
 export default function Checkbox({ id, checked, onChange, disabled, label, className = '' }) {

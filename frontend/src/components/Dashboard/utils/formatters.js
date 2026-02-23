@@ -1,4 +1,4 @@
-export const formatNumber = (num, decimals = 4) => {
+﻿export const formatNumber = (num, decimals = 4) => {
   if (num === null || num === undefined || num === 'N/A' || num === '') return '-';
   if (typeof num === 'string') {
     const numValue = parseFloat(num);

@@ -1,4 +1,4 @@
-// src/components/Dashboard/relatorios/RelatorioDataMining.jsx
+﻿// src/components/Dashboard/relatorios/RelatorioDataMining.jsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { jsPDF } from 'jspdf';

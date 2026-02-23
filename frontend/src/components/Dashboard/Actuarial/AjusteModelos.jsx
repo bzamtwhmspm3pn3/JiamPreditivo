@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/AjusteModelos.jsx - VERSÃO CORRIGIDA
+﻿// src/components/Dashboard/Actuarial/AjusteModelos.jsx - VERSÃO CORRIGIDA
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';

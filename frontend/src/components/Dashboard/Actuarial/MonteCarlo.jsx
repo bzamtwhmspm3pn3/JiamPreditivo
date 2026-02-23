@@ -1,4 +1,4 @@
-// src/components/Dashboard/Actuarial/MonteCarlo.jsx - VERSÃO CORRIGIDA
+﻿// src/components/Dashboard/Actuarial/MonteCarlo.jsx - VERSÃO CORRIGIDA
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { motion } from 'framer-motion';

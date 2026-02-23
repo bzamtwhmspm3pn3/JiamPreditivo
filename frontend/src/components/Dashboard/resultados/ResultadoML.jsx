@@ -1,4 +1,4 @@
-// componentes/resultados/ResultadoML.js
+﻿// componentes/resultados/ResultadoML.js
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import Card, { CardHeader, CardTitle, CardContent, CardDescription } from '../componentes/Card';

@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 const Badge = ({ children, variant = "default", className = "", ...props }) => {
   const variantClasses = {

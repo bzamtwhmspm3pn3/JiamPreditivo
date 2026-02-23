@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 
 export const Table = ({ children, className = "", ...props }) => (
   <div className="overflow-x-auto border border-gray-200 rounded-lg">

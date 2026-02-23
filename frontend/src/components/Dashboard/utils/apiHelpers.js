@@ -1,4 +1,4 @@
-// Funções auxiliares para chamadas à API
+﻿// Funções auxiliares para chamadas à API
 export const validarDadosParaModelo = (dados, tipoModelo) => {
   if (!dados || !Array.isArray(dados) || dados.length === 0) {
     return { valido: false, erro: 'Nenhum dado disponível' };
