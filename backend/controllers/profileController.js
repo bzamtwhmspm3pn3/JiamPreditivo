@@ -1,5 +1,5 @@
-const Profile = require('../models/Profile');
-const Activity = require('../models/Activity');
+const Profile = require('../models/profile');
+const Activity = require('../models/activity');
 const cloudinary = require('../utils/uploadService');
 
 exports.getProfile = async (req, res) => {
