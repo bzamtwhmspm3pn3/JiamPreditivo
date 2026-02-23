@@ -1,8 +1,3 @@
-# Criar diretório se não existir
-New-Item -ItemType Directory -Path "backend\routes" -Force
-
-# Criar o arquivo proxy.js
-@"
 // backend/routes/proxy.js
 const express = require('express');
 const router = express.Router();
@@ -43,6 +38,3 @@ router.get('/:source/:path(*)', async (req, res) => {
 });
 
 module.exports = router;
-"@ | Set-Content -Path "backend\routes\proxy.js" -Encoding UTF8
-
-Write-Host "✅ proxy.js criado" -ForegroundColor Green
