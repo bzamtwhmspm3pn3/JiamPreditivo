@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Profile = require('../models/profile');
-const User = require('../models/User');
+const User = require('../models/user');
 const jwt = require('jsonwebtoken');
 
 // Middleware de autenticação
