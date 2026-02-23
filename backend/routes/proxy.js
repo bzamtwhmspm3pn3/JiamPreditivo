@@ -41,19 +41,20 @@ router.get('/:source/:path(*)', async (req, res) => {
   }
 
   try {
-    const fullUrl = ${config.url}/;
-    console.log(🔀 Proxy:  -> );
-    
+    // CORREÇÃO: Usar crases para template string
+    const fullUrl = `${config.url}/${path}`;
+    console.log(`🔀 Proxy: ${req.originalUrl} -> ${fullUrl}`);
+
     const response = await axios.get(fullUrl, {
       params: req.query,
       timeout: 5000,
       headers: { 'User-Agent': 'JIAM-Preditivo/2.0' }
     });
-    
+
     res.json(response.data);
   } catch (error) {
-    console.log(⚠️ API  indisponível (), usando fallback);
-    
+    console.log(`⚠️ API ${source} indisponível (${error.message}), usando fallback`);
+
     // Retornar fallback específico para o caminho
     const fallback = config.fallback[path] || config.fallback;
     res.json(fallback);
