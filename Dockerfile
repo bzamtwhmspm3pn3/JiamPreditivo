@@ -1,5 +1,5 @@
 # Usar Node.js como base
-FROM node:18-slim
+FROM node:20-slim
 
 # Instalar R e dependências necessárias
 RUN apt-get update && apt-get install -y \

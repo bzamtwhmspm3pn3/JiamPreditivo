@@ -202,8 +202,8 @@
     "xtend": "^4.0.2"
   },
   "engines": {
-    "node": "18.x",
-    "npm": ">=8.0.0"
+  "node": ">=20.18.1",
+  "npm": ">=10.0.0"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
