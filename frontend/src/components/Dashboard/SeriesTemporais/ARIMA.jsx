@@ -46,9 +46,62 @@ const isExcelSerial = (valor) => {
   return !isNaN(valor) && Number(valor) > 40000 && Number(valor) < 50000;
 };
 
-// Função para converter qualquer formato de data para legível
+// ✅ NOVA FUNÇÃO: detectar se é ano isolado (ex: 1961, "1961")
+const isAnoIsolado = (valor) => {
+  if (typeof valor === 'number') return valor >= 1900 && valor <= 2100;
+  if (typeof valor === 'string') return /^\d{4}$/.test(valor);
+  return false;
+};
+
+// ✅ FUNÇÃO CORRIGIDA: obter timestamp
+const obterTimestamp = (dataRaw) => {
+  // Se for ano isolado (ex: 1961, "1961")
+  if (isAnoIsolado(dataRaw)) {
+    const ano = Number(dataRaw);
+    return new Date(ano, 0, 1).getTime(); // 1º de janeiro
+  }
+  
+  if (isExcelSerial(dataRaw)) {
+    const data = converterExcelSerialParaData(Number(dataRaw));
+    const [dia, mes, ano] = data.split('/').map(Number);
+    return new Date(ano, mes - 1, dia).getTime();
+  }
+  
+  try {
+    if (typeof dataRaw === 'string') {
+      // Formato dd/mm/aaaa ou dd-mm-aaaa
+      if (dataRaw.includes('/')) {
+        const parts = dataRaw.split('/');
+        if (parts.length === 3) {
+          const [dia, mes, ano] = parts.map(Number);
+          return new Date(ano, mes - 1, dia).getTime();
+        }
+      } else if (dataRaw.includes('-')) {
+        const parts = dataRaw.split('-');
+        if (parts.length === 3) {
+          // Pode ser aaaa-mm-dd ou dd-mm-aaaa
+          if (parts[0].length === 4) {
+            const [ano, mes, dia] = parts.map(Number);
+            return new Date(ano, mes - 1, dia).getTime();
+          } else {
+            const [dia, mes, ano] = parts.map(Number);
+            return new Date(ano, mes - 1, dia).getTime();
+          }
+        }
+      }
+    }
+  } catch {}
+  
+  return 0;
+};
+
+// ✅ FUNÇÃO CORRIGIDA: formatar data para exibição
 const formatarDataParaExibicao = (dataRaw) => {
   if (!dataRaw) return '';
+  
+  if (isAnoIsolado(dataRaw)) {
+    return String(dataRaw); // apenas o ano
+  }
   
   if (isExcelSerial(dataRaw)) {
     return converterExcelSerialParaData(Number(dataRaw));
@@ -65,8 +118,13 @@ const formatarDataParaExibicao = (dataRaw) => {
       } else if (dataRaw.includes('-')) {
         const parts = dataRaw.split('-');
         if (parts.length === 3) {
-          const [y, m, d] = parts;
-          return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+          if (parts[0].length === 4) {
+            const [y, m, d] = parts;
+            return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+          } else {
+            const [d, m, y] = parts;
+            return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+          }
         }
       }
     } catch {}
@@ -92,36 +150,7 @@ const extrairDatasLegiveisOrdenadas = (dadosArray, colunaData) => {
   return datasComLegivel;
 };
 
-// Função para obter timestamp de uma data
-const obterTimestamp = (dataRaw) => {
-  if (isExcelSerial(dataRaw)) {
-    const data = converterExcelSerialParaData(Number(dataRaw));
-    const [dia, mes, ano] = data.split('/').map(Number);
-    return new Date(ano, mes - 1, dia).getTime();
-  }
-  
-  try {
-    if (typeof dataRaw === 'string') {
-      if (dataRaw.includes('/')) {
-        const parts = dataRaw.split('/');
-        if (parts.length === 3) {
-          const [dia, mes, ano] = parts.map(Number);
-          return new Date(ano, mes - 1, dia).getTime();
-        }
-      } else if (dataRaw.includes('-')) {
-        const parts = dataRaw.split('-');
-        if (parts.length === 3) {
-          const [ano, mes, dia] = parts.map(Number);
-          return new Date(ano, mes - 1, dia).getTime();
-        }
-      }
-    }
-  } catch {}
-  
-  return 0;
-};
-
-// Função para determinar frequência automaticamente
+// ✅ FUNÇÃO CORRIGIDA: determinar frequência
 const determinarFrequencia = (datasOrdenadas) => {
   if (datasOrdenadas.length < 2) return { tipo: 'MENSAL', label: 'Mensal' };
   
@@ -143,7 +172,7 @@ const determinarFrequencia = (datasOrdenadas) => {
   return { tipo: 'ANUAL', label: 'Anual' };
 };
 
-// Função para gerar opções de período inicial
+// ✅ FUNÇÃO CORRIGIDA: gerar opções de período inicial para dados anuais
 const gerarOpcoesPeriodoInicial = (frequencia, ultimaData) => {
   const opcoes = [];
   
@@ -175,12 +204,13 @@ const gerarOpcoesPeriodoInicial = (frequencia, ultimaData) => {
       });
     }
   } else if (frequencia === 'ANUAL') {
+    // Para dados anuais, a última data deve ser um ano (timestamp de 1º de janeiro)
+    const ultimoAno = new Date(ultimaData.timestamp).getFullYear();
     for (let i = 1; i <= 10; i++) {
-      const data = new Date(ultimaData.timestamp);
-      data.setFullYear(data.getFullYear() + i);
+      const ano = ultimoAno + i;
       opcoes.push({
-        valor: `${data.getFullYear()}`,
-        label: `Ano de ${data.getFullYear()}`
+        valor: `${ano}`, // apenas o ano
+        label: `Ano de ${ano}`
       });
     }
   } else if (frequencia === 'SEMANAL') {
@@ -511,7 +541,7 @@ const extrairMetricsARIMA = (resultado) => {
         setVariavelY(vars[0]);
         
         // Tentar identificar coluna de data automaticamente
-        const possiveisDatas = ['Data', 'data', 'DATE', 'date', 'ds', 'timestamp', 'DATA', 'Data_Ocorrencia'];
+        const possiveisDatas = ['Data', 'data', 'DATE', 'date', 'ds', 'timestamp', 'DATA', 'Data_Ocorrencia', 'Ano', 'ano', 'ANO'];
         for (const col of possiveisDatas) {
           if (vars.includes(col)) {
             setVariavelData(col);

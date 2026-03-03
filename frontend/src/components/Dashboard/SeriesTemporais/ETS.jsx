@@ -14,7 +14,10 @@ import Badge from '../componentes/Badge';
 import ResultadoSeriesTemporais from '../resultados/ResultadoSeriesTemporais';
 import ModelosService from '../../../services/modelosService';
 
-// Função para extrair dados do objeto
+// ============================================================================
+// FUNÇÕES AUXILIARES (CORRIGIDAS PARA TRATAR ANOS ISOLADOS)
+// ============================================================================
+
 const extrairDadosArray = (dadosObj) => {
   if (!dadosObj) return [];
   if (Array.isArray(dadosObj)) return dadosObj;
@@ -27,7 +30,13 @@ const extrairDadosArray = (dadosObj) => {
   return [];
 };
 
-// Função para converter número Excel serial para data
+// ✅ Nova função: detecta se o valor é um ano isolado (ex: 1961, "1961")
+const isAnoIsolado = (valor) => {
+  if (typeof valor === 'number') return valor >= 1900 && valor <= 2100;
+  if (typeof valor === 'string') return /^\d{4}$/.test(valor);
+  return false;
+};
+
 const converterExcelSerialParaData = (serial) => {
   if (!serial || isNaN(serial)) return serial;
   
@@ -41,14 +50,18 @@ const converterExcelSerialParaData = (serial) => {
   return `${dia}/${mes}/${ano}`;
 };
 
-// Função para detectar se é número Excel serial
 const isExcelSerial = (valor) => {
   return !isNaN(valor) && Number(valor) > 40000 && Number(valor) < 50000;
 };
 
-// Função para converter qualquer formato de data para legível
+// ✅ Função corrigida: reconhece anos isolados
 const formatarDataParaExibicao = (dataRaw) => {
   if (!dataRaw) return '';
+  
+  // Se for ano isolado, retorna o próprio ano como string
+  if (isAnoIsolado(dataRaw)) {
+    return String(dataRaw);
+  }
   
   if (isExcelSerial(dataRaw)) {
     return converterExcelSerialParaData(Number(dataRaw));
@@ -75,7 +88,6 @@ const formatarDataParaExibicao = (dataRaw) => {
   return dataRaw;
 };
 
-// Função para extrair e ordenar datas únicas já convertidas
 const extrairDatasLegiveisOrdenadas = (dadosArray, colunaData) => {
   if (!dadosArray || !colunaData || dadosArray.length === 0) return [];
   
@@ -92,8 +104,14 @@ const extrairDatasLegiveisOrdenadas = (dadosArray, colunaData) => {
   return datasComLegivel;
 };
 
-// Função para obter timestamp de uma data
+// ✅ Função corrigida: reconhece anos isolados
 const obterTimestamp = (dataRaw) => {
+  // Se for ano isolado (ex: 1961, "1961")
+  if (isAnoIsolado(dataRaw)) {
+    const ano = Number(dataRaw);
+    return new Date(ano, 0, 1).getTime(); // 1º de janeiro
+  }
+  
   if (isExcelSerial(dataRaw)) {
     const data = converterExcelSerialParaData(Number(dataRaw));
     const [dia, mes, ano] = data.split('/').map(Number);
@@ -121,7 +139,6 @@ const obterTimestamp = (dataRaw) => {
   return 0;
 };
 
-// Função para determinar frequência automaticamente
 const determinarFrequencia = (datasOrdenadas) => {
   if (datasOrdenadas.length < 2) return { tipo: 'MENSAL', periodo: 12, label: 'Mensal' };
   
@@ -143,7 +160,6 @@ const determinarFrequencia = (datasOrdenadas) => {
   return { tipo: 'ANUAL', periodo: 1, label: 'Anual' };
 };
 
-// Função para gerar opções de período inicial
 const gerarOpcoesPeriodoInicial = (frequencia, ultimaData) => {
   const opcoes = [];
   
@@ -200,7 +216,10 @@ const gerarOpcoesPeriodoInicial = (frequencia, ultimaData) => {
   return opcoes;
 };
 
-// 🔥 FUNÇÃO PARA EXECUTAR FALLBACK LOCAL (SIMULAÇÃO ETS)
+// ============================================================================
+// FALLBACK LOCAL (SIMULAÇÃO ETS)
+// ============================================================================
+
 const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) => {
   console.log('🔄 Executando fallback local para ETS');
   
@@ -217,12 +236,10 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
       y: item[variavelY]
     }));
     
-    // Valores reais
     const valoresReais = historico.map(h => h.y);
     const ultimoValor = valoresReais[valoresReais.length - 1];
     const mediaReal = valoresReais.reduce((a, b) => a + b, 0) / valoresReais.length;
     
-    // Simular previsões ETS
     const previsoes = [];
     
     for (let i = 1; i <= nPrevisoes; i++) {
@@ -230,13 +247,10 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
       
       // Aplicar tendência
       if (tendencia === 'A') {
-        // Tendência aditiva
         valorPrevisto += (i * 0.02 * mediaReal);
       } else if (tendencia === 'M') {
-        // Tendência multiplicativa
         valorPrevisto *= (1 + (i * 0.01));
       } else if (tendencia === 'Ad') {
-        // Tendência atenuada aditiva
         const fatorAtenuacao = 0.5;
         valorPrevisto += (i * 0.02 * mediaReal * Math.pow(fatorAtenuacao, i));
       }
@@ -247,10 +261,8 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
         let componenteSazonal = 0;
         
         if (sazonalidade === 'A') {
-          // Sazonalidade aditiva
           componenteSazonal = Math.sin((posicaoSazonal / periodo) * 2 * Math.PI) * (mediaReal * 0.1);
         } else if (sazonalidade === 'M') {
-          // Sazonalidade multiplicativa
           const fatorSazonal = 1 + (Math.sin((posicaoSazonal / periodo) * 2 * Math.PI) * 0.15);
           valorPrevisto *= fatorSazonal;
         }
@@ -263,10 +275,8 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
       // Aplicar erro
       let erroComponente = 0;
       if (erro === 'A') {
-        // Erro aditivo
         erroComponente = (Math.random() - 0.5) * (mediaReal * 0.05);
       } else if (erro === 'M') {
-        // Erro multiplicativo
         const fatorErro = 1 + (Math.random() - 0.5) * 0.03;
         valorPrevisto *= fatorErro;
       }
@@ -283,19 +293,17 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
       });
     }
     
-    // Simular métricas do modelo ETS
-    const mape = 8 + Math.random() * 12; // MAPE entre 8-20%
+    const mape = 8 + Math.random() * 12;
     const rmse = Math.abs(mediaReal * 0.08 + Math.random() * mediaReal * 0.05);
     const mae = Math.abs(mediaReal * 0.06 + Math.random() * mediaReal * 0.04);
-    const r2 = 0.75 + Math.random() * 0.20; // R² entre 0.75-0.95
+    const r2 = 0.75 + Math.random() * 0.20;
     const aic = 800 + Math.random() * 400;
     const bic = 900 + Math.random() * 400;
     
-    // Simular parâmetros de suavização
-    const alfa = 0.1 + Math.random() * 0.3; // Nível
-    const beta = tendencia !== 'N' ? (0.01 + Math.random() * 0.1) : 0; // Tendência
-    const gama = sazonalidade !== 'N' ? (0.05 + Math.random() * 0.1) : 0; // Sazonalidade
-    const phi = (tendencia === 'Ad' || tendencia === 'Md') ? (0.8 + Math.random() * 0.15) : 1; // Atenuação
+    const alfa = 0.1 + Math.random() * 0.3;
+    const beta = tendencia !== 'N' ? (0.01 + Math.random() * 0.1) : 0;
+    const gama = sazonalidade !== 'N' ? (0.05 + Math.random() * 0.1) : 0;
+    const phi = (tendencia === 'Ad' || tendencia === 'Md') ? (0.8 + Math.random() * 0.15) : 1;
     
     const resultadoSimulado = {
       success: true,
@@ -304,11 +312,9 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
       fonte: 'frontend_fallback',
       qualidade: mape < 12 ? 'ALTA' : mape < 20 ? 'MODERADA' : 'BAIXA',
       
-      // Dados e previsões
       dados_originais: historico,
       previsoes: previsoes,
       
-      // Componentes do modelo
       componentes: {
         nivel: valoresReais.map((val, idx) => ({
           ds: historico[idx].ds,
@@ -328,7 +334,6 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
         }))
       },
       
-      // Métricas
       metricas: {
         mape: mape,
         rmse: rmse,
@@ -339,7 +344,6 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
         mse: Math.pow(rmse, 2)
       },
       
-      // Parâmetros de suavização
       parametros_suavizacao: {
         alpha: alfa,
         beta: beta,
@@ -350,7 +354,6 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
         s0: sazonalidade !== 'N' ? Array(periodo).fill(0).map(() => mediaReal * (0.9 + Math.random() * 0.2)) : []
       },
       
-      // Informações do modelo
       modelo_info: {
         n_observacoes: valoresReais.length,
         frequencia: config.frequencia || 'mensal',
@@ -369,6 +372,9 @@ const executarFallbackLocalETS = (dadosArray, variavelY, variavelData, config) =
   }
 };
 
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
 
 export default function ETS({ dados, onSaveModel, modelosAjustados, onVoltar, statusSistema, onResultadoModelo }) {
   const [variaveis, setVariaveis] = useState([]);
@@ -391,142 +397,124 @@ export default function ETS({ dados, onSaveModel, modelosAjustados, onVoltar, st
   const [opcoesPeriodoInicial, setOpcoesPeriodoInicial] = useState([]);
   const [infoFrequencia, setInfoFrequencia] = useState({ tipo: 'MENSAL', periodo: 12, label: 'Mensal' });
 
+  // ==========================================================================
+  // FUNÇÕES DE SALVAMENTO E CLASSIFICAÇÃO
+  // ==========================================================================
 
-// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E MONGODB
-const salvarResultadoNoDashboard = async (resultado, config) => {
-  // 🔥 VERIFICAÇÃO DE SEGURANÇA
-  if (!onResultadoModelo) {
-    console.warn('⚠️ onResultadoModelo não está disponível - salvando apenas no MongoDB');
-  }
-  
-  try {
-    const nome = `ETS(${config.erro},${config.tendencia},${config.sazonalidade})[${config.periodo || config.frequencia || 12}]: ${config.y || 'série temporal'}`;
-    
-    // Calcular classificação e métricas
-    const classificacao = calcularClassificacaoETS(resultado);
-    const metrics = extrairMetricsETS(resultado);
-    
-    const dadosParaDashboard = {
-      nome: nome,
-      tipo: "ets",
-      dados: resultado,
-      parametros: config,
-      classificacao: classificacao,
-      timestamp: new Date().toISOString(),
-      metrics: metrics,
-      categoria: "series_temporais",
-      fonte: resultado.fonte || 'backend'
-    };
-
-    // 1. Dashboard (SÓ SE EXISTIR)
-    if (onResultadoModelo) {
-      onResultadoModelo(dadosParaDashboard);
-      console.log('📤 Resultado ETS salvo no Dashboard:', nome);
+  const salvarResultadoNoDashboard = async (resultado, config) => {
+    if (!onResultadoModelo) {
+      console.warn('⚠️ onResultadoModelo não está disponível - salvando apenas no MongoDB');
     }
     
-    // 2. 🔥 MONGODB (SEMPRE TENTA)
-    console.log('💾 Salvando modelo no MongoDB...');
-    const salvo = await ModelosService.salvar({
-      nome: nome,
-      tipo: "ets",
-      resultado: resultado,
-      parametros: config,
-      classificacao: classificacao,
-      timestamp: dadosParaDashboard.timestamp,
-      metrics: metrics,
-      qualidade: resultado.metricas || resultado.qualidade || {}
-    });
-    
-    if (salvo.success) {
-      console.log('✅ Modelo ETS salvo no MongoDB com ID:', salvo.id);
-      console.log(`📊 Classificação: ${classificacao}`);
-      console.log(`📈 MAPE: ${(metrics.mape || 0).toFixed(2)}%`);
-      console.log(`📊 Componentes: ${config.erro}${config.tendencia}${config.sazonalidade}`);
-    } else {
-      console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+    try {
+      const nome = `ETS(${config.erro},${config.tendencia},${config.sazonalidade})[${config.periodo || config.frequencia || 12}]: ${config.y || 'série temporal'}`;
+      
+      const classificacao = calcularClassificacaoETS(resultado);
+      const metrics = extrairMetricsETS(resultado);
+      
+      const dadosParaDashboard = {
+        nome: nome,
+        tipo: "ets",
+        dados: resultado,
+        parametros: config,
+        classificacao: classificacao,
+        timestamp: new Date().toISOString(),
+        metrics: metrics,
+        categoria: "series_temporais",
+        fonte: resultado.fonte || 'backend'
+      };
+
+      if (onResultadoModelo) {
+        onResultadoModelo(dadosParaDashboard);
+        console.log('📤 Resultado ETS salvo no Dashboard:', nome);
+      }
+      
+      console.log('💾 Salvando modelo no MongoDB...');
+      const salvo = await ModelosService.salvar({
+        nome: nome,
+        tipo: "ets",
+        resultado: resultado,
+        parametros: config,
+        classificacao: classificacao,
+        timestamp: dadosParaDashboard.timestamp,
+        metrics: metrics,
+        qualidade: resultado.metricas || resultado.qualidade || {}
+      });
+      
+      if (salvo.success) {
+        console.log('✅ Modelo ETS salvo no MongoDB com ID:', salvo.id);
+        console.log(`📊 Classificação: ${classificacao}`);
+        console.log(`📈 MAPE: ${(metrics.mape || 0).toFixed(2)}%`);
+        console.log(`📊 Componentes: ${config.erro}${config.tendencia}${config.sazonalidade}`);
+      } else {
+        console.error('❌ Erro ao salvar no MongoDB:', salvo.error);
+      }
+      
+    } catch (error) {
+      console.error('❌ Erro ao salvar:', error);
     }
-    
-  } catch (error) {
-    console.error('❌ Erro ao salvar:', error);
-  }
-};
-
-// 🔥 FUNÇÃO PARA CALCULAR CLASSIFICAÇÃO ETS (VERSÃO MELHORADA)
-const calcularClassificacaoETS = (resultado) => {
-  if (!resultado) return "MODERADA";
-  
-  const metricas = resultado.metricas || resultado.qualidade || {};
-  
-  const mape = metricas.mape || 100;
-  const rmse = metricas.rmse || Infinity;
-  const r2 = metricas.r2 || 0;
-  const aic = metricas.aic || Infinity;
-  const bic = metricas.bic || Infinity;
-  
-  // ETS: combinação de erro, tendência e sazonalidade
-  if (mape < 5 || r2 > 0.95 || aic < 500) return "EXCELENTE";
-  if (mape < 10 || r2 > 0.90 || aic < 800) return "BOA";
-  if (mape < 15 || r2 > 0.85 || aic < 1200) return "MODERADA";
-  if (mape < 25 || r2 > 0.75 || aic < 2000) return "BAIXA";
-  
-  return "MUITO BAIXA";
-};
-
-// 🔥 FUNÇÃO PARA EXTRAIR MÉTRICAS ETS (VERSÃO MELHORADA)
-const extrairMetricsETS = (resultado) => {
-  if (!resultado) return {};
-  
-  const metricas = resultado.metricas || resultado.qualidade || {};
-  const modeloInfo = resultado.modelo_info || resultado.dados_info || {};
-  const params = resultado.parametros_suavizacao || resultado.parameters || {};
-  
-  return {
-    // Métricas de erro
-    mape: metricas.mape,
-    rmse: metricas.rmse,
-    mae: metricas.mae,
-    mse: metricas.mse,
-    
-    // Métricas de ajuste
-    r2: metricas.r2,
-    r2_ajustado: metricas.r2_ajustado,
-    
-    // Critérios de informação
-    aic: metricas.aic,
-    bic: metricas.bic,
-    aicc: metricas.aicc,
-    
-    // Componentes do modelo
-    erro: modeloInfo.erro || metricas.erro,
-    tendencia: modeloInfo.tendencia || metricas.tendencia,
-    sazonalidade: modeloInfo.sazonalidade || metricas.sazonalidade,
-    configuracao: modeloInfo.configuracao || `${params.erro || '?'}${params.tendencia || '?'}${params.sazonalidade || '?'}`,
-    
-    // Parâmetros de suavização
-    alpha: params.alpha,
-    beta: params.beta,
-    gamma: params.gamma,
-    phi: params.phi,
-    
-    // Período sazonal
-    periodo_sazonal: modeloInfo.periodo_sazonal || metricas.periodo_sazonal,
-    
-    // Informações dos dados
-    n_observacoes: modeloInfo.n_observacoes,
-    n_previsoes: modeloInfo.n_previsoes,
-    frequencia: modeloInfo.frequencia,
-    periodo_inicio: modeloInfo.periodo_inicio,
-    periodo_fim: modeloInfo.periodo_fim,
-    
-    // Estatísticas adicionais
-    log_likelihood: metricas.log_likelihood,
-    residuos_media: metricas.residuos_media,
-    residuos_desvio: metricas.residuos_desvio
   };
-};
 
+  const calcularClassificacaoETS = (resultado) => {
+    if (!resultado) return "MODERADA";
+    
+    const metricas = resultado.metricas || resultado.qualidade || {};
+    
+    const mape = metricas.mape || 100;
+    const rmse = metricas.rmse || Infinity;
+    const r2 = metricas.r2 || 0;
+    const aic = metricas.aic || Infinity;
+    const bic = metricas.bic || Infinity;
+    
+    if (mape < 5 || r2 > 0.95 || aic < 500) return "EXCELENTE";
+    if (mape < 10 || r2 > 0.90 || aic < 800) return "BOA";
+    if (mape < 15 || r2 > 0.85 || aic < 1200) return "MODERADA";
+    if (mape < 25 || r2 > 0.75 || aic < 2000) return "BAIXA";
+    
+    return "MUITO BAIXA";
+  };
 
-  // Extrair variáveis dos dados
+  const extrairMetricsETS = (resultado) => {
+    if (!resultado) return {};
+    
+    const metricas = resultado.metricas || resultado.qualidade || {};
+    const modeloInfo = resultado.modelo_info || resultado.dados_info || {};
+    const params = resultado.parametros_suavizacao || resultado.parameters || {};
+    
+    return {
+      mape: metricas.mape,
+      rmse: metricas.rmse,
+      mae: metricas.mae,
+      mse: metricas.mse,
+      r2: metricas.r2,
+      r2_ajustado: metricas.r2_ajustado,
+      aic: metricas.aic,
+      bic: metricas.bic,
+      aicc: metricas.aicc,
+      erro: modeloInfo.erro || metricas.erro,
+      tendencia: modeloInfo.tendencia || metricas.tendencia,
+      sazonalidade: modeloInfo.sazonalidade || metricas.sazonalidade,
+      configuracao: modeloInfo.configuracao || `${params.erro || '?'}${params.tendencia || '?'}${params.sazonalidade || '?'}`,
+      alpha: params.alpha,
+      beta: params.beta,
+      gamma: params.gamma,
+      phi: params.phi,
+      periodo_sazonal: modeloInfo.periodo_sazonal || metricas.periodo_sazonal,
+      n_observacoes: modeloInfo.n_observacoes,
+      n_previsoes: modeloInfo.n_previsoes,
+      frequencia: modeloInfo.frequencia,
+      periodo_inicio: modeloInfo.periodo_inicio,
+      periodo_fim: modeloInfo.periodo_fim,
+      log_likelihood: metricas.log_likelihood,
+      residuos_media: metricas.residuos_media,
+      residuos_desvio: metricas.residuos_desvio
+    };
+  };
+
+  // ==========================================================================
+  // EFEITOS (EXTRAIR VARIÁVEIS, PROCESSAR DATAS)
+  // ==========================================================================
+
   useEffect(() => {
     const dadosArray = extrairDadosArray(dados);
     
@@ -538,7 +526,6 @@ const extrairMetricsETS = (resultado) => {
       if (vars.length > 0) {
         setVariavelY(vars[0]);
         
-        // Tentar identificar coluna de data automaticamente
         const possiveisDatas = ['Data', 'data', 'DATE', 'date', 'ds', 'timestamp', 'DATA', 'Data_Ocorrencia'];
         for (const col of possiveisDatas) {
           if (vars.includes(col)) {
@@ -562,7 +549,6 @@ const extrairMetricsETS = (resultado) => {
     }
   }, [dados]);
 
-  // Quando a coluna de data mudar, processar datas
   useEffect(() => {
     if (variavelData) {
       const dadosArray = extrairDadosArray(dados);
@@ -570,7 +556,6 @@ const extrairMetricsETS = (resultado) => {
         const datasProcessadas = extrairDatasLegiveisOrdenadas(dadosArray, variavelData);
         setDatasOrdenadas(datasProcessadas);
         
-        // Determinar frequência automaticamente
         const freq = determinarFrequencia(datasProcessadas);
         setInfoFrequencia(freq);
         setParametros(prev => ({
@@ -579,15 +564,11 @@ const extrairMetricsETS = (resultado) => {
           frequencia: freq.tipo.toLowerCase()
         }));
         
-        // Se houver datas, definir a última como período inicial padrão
         if (datasProcessadas.length > 0) {
           const ultimaData = datasProcessadas[datasProcessadas.length - 1];
-          
-          // Gerar opções de período inicial baseado na frequência
           const opcoes = gerarOpcoesPeriodoInicial(freq.tipo, ultimaData);
           setOpcoesPeriodoInicial(opcoes);
           
-          // Definir primeira opção como padrão
           if (opcoes.length > 0) {
             setPeriodoInicio(opcoes[0].valor);
           }
@@ -602,7 +583,6 @@ const extrairMetricsETS = (resultado) => {
       [chave]: valor
     }));
     
-    // Se mudar a sazonalidade para 'N', ajustar período para 1
     if (chave === 'sazonalidade' && valor === 'N') {
       setParametros(prev => ({ ...prev, periodo: 1 }));
     }
@@ -646,7 +626,6 @@ const extrairMetricsETS = (resultado) => {
       return;
     }
 
-    // Validar modelo ETS
     const periodoAtual = parametros.sazonalidade !== 'N' ? parseInt(parametros.periodo) || 12 : 1;
     
     if (parametros.sazonalidade !== 'N' && dadosArray.length < periodoAtual * 2) {
@@ -657,7 +636,6 @@ const extrairMetricsETS = (resultado) => {
     setResultado(null);
 
     try {
-      // Preparar dados para envio
       const dadosFormatados = dadosArray.map(item => {
         if (item && typeof item === 'object') {
           const obj = {};
@@ -679,12 +657,8 @@ const extrairMetricsETS = (resultado) => {
         n_previsoes: parseInt(parametros.n_previsoes) || 12,
         frequencia: infoFrequencia.tipo.toLowerCase(),
         tipo: 'ets',
-        
-        // Dados para correção no backend
         periodo_inicio: periodoInicio,
         periodo_tipo: infoFrequencia.tipo,
-        
-        // Metadados
         modelo: 'ETS',
         configuracao: `(${parametros.erro},${parametros.tendencia},${parametros.sazonalidade})`,
         variavel_y: variavelY,
@@ -698,7 +672,6 @@ const extrairMetricsETS = (resultado) => {
       let resultadoBackend;
       const isConnected = statusSistema?.connected || false;
       
-      // Tentar executar no backend se conectado
       if (isConnected) {
         try {
           resultadoBackend = await api.executarModeloR('ets', dadosFormatados, parametrosBackend);
@@ -713,7 +686,6 @@ const extrairMetricsETS = (resultado) => {
           resultadoBackend = executarFallbackLocalETS(dadosFormatados, variavelY, variavelData, parametrosBackend);
         }
       } else {
-        // Usar fallback se não conectado
         resultadoBackend = executarFallbackLocalETS(dadosFormatados, variavelY, variavelData, parametrosBackend);
       }
 
@@ -741,12 +713,10 @@ const extrairMetricsETS = (resultado) => {
         
         setResultado(novoModelo);
         
-        // 🔥 CHAMAR onSaveModel PARA COMPATIBILIDADE
         if (onSaveModel) {
           onSaveModel(novoModelo.nome, novoModelo);
         }
         
-        // 🔥 SALVAR NO DASHBOARD
         salvarResultadoNoDashboard(resultadoBackend, parametrosBackend);
         
         setVisualizacaoAtiva('resultados');
@@ -762,7 +732,6 @@ const extrairMetricsETS = (resultado) => {
     } catch (error) {
       console.error('Erro detalhado:', error);
       
-      // Tentar fallback completo
       try {
         const resultadoFallback = executarFallbackLocalETS(
           dadosArray, 
@@ -812,12 +781,10 @@ const extrairMetricsETS = (resultado) => {
           
           setResultado(novoModelo);
           
-          // 🔥 CHAMAR onSaveModel
           if (onSaveModel) {
             onSaveModel(novoModelo.nome, novoModelo);
           }
           
-          // 🔥 SALVAR NO DASHBOARD (FALLBACK EMERGÊNCIA)
           if (onResultadoModelo) {
             onResultadoModelo({
               nome: `ETS (Emergência): ${variavelY}`,
@@ -1241,7 +1208,6 @@ const extrairMetricsETS = (resultado) => {
                       </p>
                     )}
                     
-                    {/* 🔥 INDICADOR DE INTEGRAÇÃO COM DASHBOARD */}
                     {onResultadoModelo && (
                       <div className="mt-2 flex items-center justify-center text-xs text-green-600">
                         <span className="mr-1">✅</span>

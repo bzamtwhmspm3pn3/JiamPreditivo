@@ -14,7 +14,10 @@ import Badge from '../componentes/Badge';
 import ResultadoSeriesTemporais from '../resultados/ResultadoSeriesTemporais';
 import ModelosService from '../../../services/modelosService';
 
-// Função para extrair dados do objeto
+// ============================================================================
+// FUNÇÕES AUXILIARES (CORRIGIDAS PARA TRATAR ANOS ISOLADOS)
+// ============================================================================
+
 const extrairDadosArray = (dadosObj) => {
   if (!dadosObj) return [];
   if (Array.isArray(dadosObj)) return dadosObj;
@@ -27,7 +30,13 @@ const extrairDadosArray = (dadosObj) => {
   return [];
 };
 
-// Função para converter número Excel serial para data
+// ✅ Nova função: detecta se o valor é um ano isolado (ex: 1961, "1961")
+const isAnoIsolado = (valor) => {
+  if (typeof valor === 'number') return valor >= 1900 && valor <= 2100;
+  if (typeof valor === 'string') return /^\d{4}$/.test(valor);
+  return false;
+};
+
 const converterExcelSerialParaData = (serial) => {
   if (!serial || isNaN(serial)) return serial;
   
@@ -41,14 +50,18 @@ const converterExcelSerialParaData = (serial) => {
   return `${dia}/${mes}/${ano}`;
 };
 
-// Função para detectar se é número Excel serial
 const isExcelSerial = (valor) => {
   return !isNaN(valor) && Number(valor) > 40000 && Number(valor) < 50000;
 };
 
-// Função para converter qualquer formato de data para legível
+// ✅ Função corrigida: reconhece anos isolados
 const formatarDataParaExibicao = (dataRaw) => {
   if (!dataRaw) return '';
+  
+  // Se for ano isolado, retorna o próprio ano como string
+  if (isAnoIsolado(dataRaw)) {
+    return String(dataRaw);
+  }
   
   if (isExcelSerial(dataRaw)) {
     return converterExcelSerialParaData(Number(dataRaw));
@@ -77,7 +90,6 @@ const formatarDataParaExibicao = (dataRaw) => {
   return dataRaw;
 };
 
-// Função para extrair e ordenar datas únicas já convertidas
 const extrairDatasLegiveisOrdenadas = (dadosArray, colunaData) => {
   if (!dadosArray || !colunaData || dadosArray.length === 0) return [];
   
@@ -92,8 +104,14 @@ const extrairDatasLegiveisOrdenadas = (dadosArray, colunaData) => {
   return datasComLegivel;
 };
 
-// Função para obter timestamp de uma data
+// ✅ Função corrigida: reconhece anos isolados
 const obterTimestamp = (dataRaw) => {
+  // Se for ano isolado (ex: 1961, "1961")
+  if (isAnoIsolado(dataRaw)) {
+    const ano = Number(dataRaw);
+    return new Date(ano, 0, 1).getTime(); // 1º de janeiro
+  }
+  
   if (isExcelSerial(dataRaw)) {
     const data = converterExcelSerialParaData(Number(dataRaw));
     const [dia, mes, ano] = data.split('/').map(Number);
@@ -123,7 +141,6 @@ const obterTimestamp = (dataRaw) => {
   return 0;
 };
 
-// Função para determinar frequência automaticamente
 const determinarFrequencia = (datasOrdenadas) => {
   if (datasOrdenadas.length < 2) return { tipo: 'MENSAL', s: 12, label: 'Mensal' };
   
@@ -145,7 +162,6 @@ const determinarFrequencia = (datasOrdenadas) => {
   return { tipo: 'ANUAL', s: 1, label: 'Anual' };
 };
 
-// Função para gerar opções de período inicial
 const gerarOpcoesPeriodoInicial = (frequencia, ultimaData) => {
   const opcoes = [];
   
@@ -162,14 +178,14 @@ const gerarOpcoesPeriodoInicial = (frequencia, ultimaData) => {
       });
     }
   } else if (frequencia === 'MENSAL') {
+    const mesNomes = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ];
     for (let i = 1; i <= 12; i++) {
       const data = new Date(ultimaData.timestamp);
       data.setMonth(data.getMonth() + i);
       const mesNum = data.getMonth() + 1;
-      const mesNomes = [
-        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-      ];
       opcoes.push({
         valor: `${mesNum.toString().padStart(2, '0')}/${data.getFullYear()}`,
         label: `${mesNomes[data.getMonth()]} de ${data.getFullYear()}`
@@ -218,10 +234,6 @@ const executarFallbackLocalSARIMA = (dadosArray, variavelY, variavelData, config
       
       previsoes.push(base + tendencia + sazonalidade + ruido);
     }
-    
-    // Gerar datas futuras
-    const ultimaDataObj = dadosArray[dadosArray.length - 1];
-    const ultimaData = ultimaDataObj[variavelData];
     
     // Simular métricas do modelo
     const mape = 8 + Math.random() * 10; // MAPE entre 8-18%
@@ -288,7 +300,9 @@ const executarFallbackLocalSARIMA = (dadosArray, variavelY, variavelData, config
   }
 };
 
-
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
 
 export default function SARIMA({ dados, onSaveModel, modelosAjustados, onVoltar, statusSistema, onResultadoModelo }) {
   const [variaveis, setVariaveis] = useState([]);
@@ -314,12 +328,11 @@ export default function SARIMA({ dados, onSaveModel, modelosAjustados, onVoltar,
   const [opcoesPeriodoInicial, setOpcoesPeriodoInicial] = useState([]);
   const [infoFrequencia, setInfoFrequencia] = useState({ tipo: 'MENSAL', s: 12, label: 'Mensal' });
 
+  // ==========================================================================
+  // FUNÇÕES DE SALVAMENTO E CLASSIFICAÇÃO
+  // ==========================================================================
 
-
-
-// 🔥 FUNÇÃO PARA SALVAR RESULTADO NO DASHBOARD E MONGODB
-const salvarResultadoNoDashboard = async (resultado, config) => {
-    // ✅ AGORA onResultadoModelo está disponível no escopo
+  const salvarResultadoNoDashboard = async (resultado, config) => {
     if (!onResultadoModelo) {
       console.warn('⚠️ onResultadoModelo não está disponível - salvando apenas no MongoDB');
     }
@@ -342,13 +355,11 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
         fonte: resultado.fonte || 'backend'
       };
 
-      // 1. Dashboard (SÓ SE EXISTIR)
       if (onResultadoModelo) {
         onResultadoModelo(dadosParaDashboard);
         console.log('📤 Resultado SARIMA salvo no Dashboard:', nome);
       }
       
-      // 2. 🔥 MONGODB (SEMPRE TENTA)
       console.log('💾 Salvando modelo no MongoDB...');
       const salvo = await ModelosService.salvar({
         nome: nome,
@@ -374,7 +385,6 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
     }
   };
 
-  // 🔥 FUNÇÕES AUXILIARES (também dentro do componente)
   const calcularClassificacaoSARIMA = (resultado) => {
     if (!resultado) return "MODERADA";
     
@@ -416,8 +426,10 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
     };
   };
 
-  
-  // Extrair variáveis dos dados
+  // ==========================================================================
+  // EFEITOS (EXTRAIR VARIÁVEIS, PROCESSAR DATAS)
+  // ==========================================================================
+
   useEffect(() => {
     const dadosArray = extrairDadosArray(dados);
     
@@ -452,7 +464,6 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
     }
   }, [dados]);
 
-  // Quando a coluna de data mudar, processar datas
   useEffect(() => {
     if (variavelData) {
       const dadosArray = extrairDadosArray(dados);
@@ -566,7 +577,6 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
       let resultadoBackend;
       const isConnected = statusSistema?.connected || false;
       
-      // Tentar executar no backend se conectado
       if (isConnected) {
         try {
           resultadoBackend = await api.executarModeloR('sarima', dadosFormatados, parametrosBackend);
@@ -581,7 +591,6 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
           resultadoBackend = executarFallbackLocalSARIMA(dadosFormatados, variavelY, variavelData, parametrosBackend);
         }
       } else {
-        // Usar fallback se não conectado
         resultadoBackend = executarFallbackLocalSARIMA(dadosFormatados, variavelY, variavelData, parametrosBackend);
       }
 
@@ -609,12 +618,10 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
         
         setResultado(novoModelo);
         
-        // 🔥 CHAMAR onSaveModel PARA COMPATIBILIDADE
         if (onSaveModel) {
           onSaveModel(novoModelo.nome, novoModelo);
         }
         
-        // 🔥 SALVAR NO DASHBOARD
         salvarResultadoNoDashboard(resultadoBackend, parametrosBackend);
         
         setVisualizacaoAtiva('resultados');
@@ -630,7 +637,6 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
     } catch (error) {
       console.error('Erro detalhado:', error);
       
-      // Tentar fallback completo
       try {
         const resultadoFallback = executarFallbackLocalSARIMA(
           dadosArray, 
@@ -687,12 +693,10 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
           
           setResultado(novoModelo);
           
-          // 🔥 CHAMAR onSaveModel
           if (onSaveModel) {
             onSaveModel(novoModelo.nome, novoModelo);
           }
           
-          // 🔥 SALVAR NO DASHBOARD (FALLBACK EMERGÊNCIA)
           if (onResultadoModelo) {
             onResultadoModelo({
               nome: `SARIMA (Emergência): ${variavelY}`,
@@ -1118,7 +1122,6 @@ const salvarResultadoNoDashboard = async (resultado, config) => {
                       </p>
                     )}
                     
-                    {/* 🔥 INDICADOR DE INTEGRAÇÃO COM DASHBOARD */}
                     {onResultadoModelo && (
                       <div className="mt-2 flex items-center justify-center text-xs text-green-600">
                         <span className="mr-1">✅</span>
