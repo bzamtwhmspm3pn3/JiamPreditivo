@@ -60,6 +60,7 @@ import {
 
 // Componentes UI personalizados
 import Card, { CardHeader, CardTitle, CardContent, CardDescription } from '../componentes/Card';
+import { formatarDataCompleta, formatarDataGrafico, corrigirSeculoData } from '../../../utils/dateUtils';
 import Button from '../componentes/Button';
 import Badge from '../componentes/Badge';
 

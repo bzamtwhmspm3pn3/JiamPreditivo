@@ -6,6 +6,7 @@ import {
   Activity, BarChart2, Calendar, Target 
 } from 'lucide-react';
 import Card, { CardHeader, CardTitle, CardContent } from '../componentes/Card';
+import { formatarDataCompleta, formatarDataGrafico, corrigirSeculoData } from '../../../utils/dateUtils';
 import Button from '../componentes/Button';
 import Badge from '../componentes/Badge';
 import {
