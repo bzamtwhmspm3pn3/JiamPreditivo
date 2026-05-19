@@ -157,23 +157,14 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
   };
 
   const dadosPrevisoesHistorico = () => {
-  if (!dadosProcessados) return null;
+  if (!dadosProcessados || (!dadosProcessados.dadosHistoricos?.length && !dadosProcessados.dadosPrevisoes?.length)) return null;
 
   const { dadosHistoricos, dadosPrevisoes, dadosAjustados, nomeSerie } = dadosProcessados;
 
-  // Se não há dados, retorna placeholder
-  if ((!dadosHistoricos || dadosHistoricos.length === 0) && (!dadosPrevisoes || dadosPrevisoes.length === 0)) {
-    return {
-      type: 'line',
-      data: { labels: ['Sem dados'], datasets: [] },
-      options: {}
-    };
-  }
-
   const todasDatas = new Set();
-  if (dadosHistoricos) dadosHistoricos.forEach(item => item.data && todasDatas.add(item.data));
-  if (dadosAjustados) dadosAjustados.forEach(item => item.data && todasDatas.add(item.data));
-  if (dadosPrevisoes) dadosPrevisoes.forEach(item => item.data && todasDatas.add(item.data));
+  if (dadosHistoricos) dadosHistoricos.forEach(item => todasDatas.add(item.data));
+  if (dadosAjustados) dadosAjustados.forEach(item => todasDatas.add(item.data));
+  if (dadosPrevisoes) dadosPrevisoes.forEach(item => todasDatas.add(item.data));
 
   const datasOrdenadas = Array.from(todasDatas).sort((a, b) => obterTimestamp(a) - obterTimestamp(b));
   const labels = datasOrdenadas.map(d => formatarDataGrafico(d));
@@ -186,14 +177,10 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
 
   const datasets = [];
 
-  // 🔵 DADOS HISTÓRICOS (AZUL)
   if (dadosHistoricos && dadosHistoricos.length > 0) {
     datasets.push({
       label: 'Dados Históricos',
-      data: datasOrdenadas.map(d => {
-        const val = historicoMap.get(d);
-        return val !== undefined && val !== null && !isNaN(val) ? val : null;
-      }),
+      data: datasOrdenadas.map(d => historicoMap.get(d) ?? null),
       borderColor: '#2563eb',
       backgroundColor: 'rgba(37, 99, 235, 0.1)',
       borderWidth: 2.5,
@@ -201,18 +188,33 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
       tension: 0.1,
       pointRadius: 3,
       pointHoverRadius: 6,
+      pointBackgroundColor: '#2563eb',
+      pointBorderColor: '#ffffff',
+      pointBorderWidth: 1.5,
       order: 1
     });
   }
 
-  // 🟢 PREVISÕES (VERDE TRACEJADA)
+  if (dadosAjustados && dadosAjustados.length > 0) {
+    datasets.push({
+      label: 'Ajuste do Modelo',
+      data: datasOrdenadas.map(d => ajustadosMap.get(d) ?? null),
+      borderColor: '#f59e0b',
+      backgroundColor: 'rgba(245, 158, 11, 0.05)',
+      borderWidth: 1.5,
+      borderDash: [4, 4],
+      fill: false,
+      tension: 0.1,
+      pointRadius: 1,
+      pointHoverRadius: 4,
+      order: 2
+    });
+  }
+
   if (dadosPrevisoes && dadosPrevisoes.length > 0) {
     datasets.push({
       label: 'Previsões',
-      data: datasOrdenadas.map(d => {
-        const val = previsoesMap.get(d);
-        return val !== undefined && val !== null && !isNaN(val) ? val : null;
-      }),
+      data: datasOrdenadas.map(d => previsoesMap.get(d) ?? null),
       borderColor: '#16a34a',
       backgroundColor: 'rgba(22, 163, 74, 0.1)',
       borderWidth: 2.5,
@@ -221,45 +223,49 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
       tension: 0.2,
       pointRadius: 4,
       pointHoverRadius: 7,
-      order: 2
+      pointBackgroundColor: '#16a34a',
+      pointBorderColor: '#ffffff',
+      pointBorderWidth: 1.5,
+      order: 3
     });
 
-    // INTERVALO DE CONFIANÇA
     const temIntervalos = dadosPrevisoes.some(p => p.inferior !== null && p.superior !== null);
     if (temIntervalos) {
       datasets.push({
+        label: 'Limite Superior (95% CI)',
+        data: datasOrdenadas.map(d => superiorMap.get(d) ?? null),
+        borderColor: 'rgba(22, 163, 74, 0.3)',
+        backgroundColor: 'rgba(0,0,0,0)',
+        borderWidth: 1,
+        borderDash: [2, 2],
+        fill: false,
+        tension: 0,
+        pointRadius: 0,
+        order: 4
+      });
+
+      datasets.push({
         label: 'Intervalo de Confiança (95%)',
-        data: datasOrdenadas.map(d => {
-          const inferior = inferiorMap.get(d);
-          const superior = superiorMap.get(d);
-          if (inferior !== undefined && superior !== undefined && !isNaN(inferior) && !isNaN(superior)) {
-            return inferior;
-          }
-          return null;
-        }),
+        data: datasOrdenadas.map(d => inferiorMap.get(d) ?? null),
         borderColor: 'rgba(22, 163, 74, 0.3)',
         backgroundColor: 'rgba(22, 163, 74, 0.15)',
         borderWidth: 1,
         borderDash: [2, 2],
         fill: { target: '+1', above: 'rgba(22, 163, 74, 0.15)' },
+        tension: 0,
         pointRadius: 0,
-        order: 3
+        order: 5
       });
     }
   }
 
-  // Calcular crescimento APENAS se houver dados válidos
   let growthText = '';
   if (dadosPrevisoes?.length > 0 && dadosHistoricos?.length > 0) {
-    const valoresHistoricos = dadosHistoricos.map(h => h.valor).filter(v => v !== null && !isNaN(v));
-    const valoresPrevisoes = dadosPrevisoes.map(p => p.previsao).filter(v => v !== null && !isNaN(v));
-    
-    const ultimoHistorico = valoresHistoricos[valoresHistoricos.length - 1];
-    const ultimaPrevisao = valoresPrevisoes[valoresPrevisoes.length - 1];
-    
-    if (ultimoHistorico && ultimaPrevisao && ultimoHistorico !== 0 && !isNaN(ultimoHistorico) && !isNaN(ultimaPrevisao)) {
+    const ultimoHistorico = dadosHistoricos[dadosHistoricos.length - 1]?.valor;
+    const ultimaPrevisao = dadosPrevisoes[dadosPrevisoes.length - 1]?.previsao;
+    if (ultimoHistorico && ultimaPrevisao && ultimoHistorico !== 0) {
       const growth = ((ultimaPrevisao - ultimoHistorico) / ultimoHistorico) * 100;
-      growthText = ` (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%)`;
+      growthText = ` (Crescimento: ${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%)`;
     }
   }
 
@@ -275,7 +281,16 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
           text: `📈 ${nomeSerie} - Previsões Prophet${growthText}`,
           font: { size: 16, weight: 'bold' }
         },
-        legend: { position: 'top', labels: { usePointStyle: true } },
+        legend: {
+          position: 'top',
+          labels: {
+            usePointStyle: true,
+            filter: (legendItem) => {
+              return !legendItem.text.includes('Limite Superior') && 
+                     !legendItem.text.includes('Limite Inferior');
+            }
+          }
+        },
         tooltip: {
           mode: 'index',
           intersect: false,
@@ -290,18 +305,19 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
         }
       },
       scales: {
-        x: { title: { display: true, text: 'Período' }, ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } },
+        x: { 
+          title: { display: true, text: 'Período' }, 
+          ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 } 
+        },
         y: { title: { display: true, text: 'Valor' } }
-      }
-    }
-  };
-};
+      },
+      // ✅ TUDO CORRETO - DENTRO DO options
       interaction: { intersect: false, mode: 'index' },
       animation: { duration: 1000, easing: 'easeOutQuart' },
       spanGaps: true
     }
   };
-};
+};  
 
   const dadosComponentes = () => {
     if (!dadosProcessados?.componentes?.tendencia?.length) return null;
