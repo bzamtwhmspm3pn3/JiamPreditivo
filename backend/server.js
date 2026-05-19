@@ -1,4 +1,4 @@
-// server.js - VERSÃO CORRIGIDA E OTIMIZADA
+// server.js - VERSÃO CORRIGIDA (APENAS ACENTOS ADICIONADOS)
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -32,12 +32,10 @@ const errorHandler = require("./middleware/errorHandler");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ==================== 🔥 FUNÇÃO PARA CORRIGIR ACENTOS ====================
-const corrigirAcentos = (texto) => {
-  if (typeof texto !== 'string') return texto;
-  
-  return texto
-    // Sequências HTML mal formatadas (seu problema específico)
+// ==================== 🔥 ÚNICA ADIÇÃO: FUNÇÃO PARA CORRIGIR ACENTOS ====================
+const corrigirAcentos = (str) => {
+  if (typeof str !== 'string') return str;
+  return str
     .replace(/<c3><a1>/g, 'á')
     .replace(/<c3><a9>/g, 'é')
     .replace(/<c3><ad>/g, 'í')
@@ -59,38 +57,20 @@ const corrigirAcentos = (texto) => {
     .replace(/<c3><94>/g, 'Ô')
     .replace(/<c3><83>/g, 'Ã')
     .replace(/<c3><95>/g, 'Õ')
-    .replace(/<c3><87>/g, 'Ç')
-    // Unicode escapes
-    .replace(/\\u00e1/g, 'á')
-    .replace(/\\u00e9/g, 'é')
-    .replace(/\\u00ed/g, 'í')
-    .replace(/\\u00f3/g, 'ó')
-    .replace(/\\u00fa/g, 'ú')
-    .replace(/\\u00e2/g, 'â')
-    .replace(/\\u00ea/g, 'ê')
-    .replace(/\\u00f4/g, 'ô')
-    .replace(/\\u00e3/g, 'ã')
-    .replace(/\\u00f5/g, 'õ')
-    .replace(/\\u00e7/g, 'ç');
+    .replace(/<c3><87>/g, 'Ç');
 };
 
-const corrigirObjetoAcentos = (obj) => {
-  if (typeof obj === 'string') {
-    return corrigirAcentos(obj);
-  }
-  if (Array.isArray(obj)) {
-    return obj.map(item => corrigirObjetoAcentos(item));
-  }
+const corrigirObjeto = (obj) => {
+  if (typeof obj === 'string') return corrigirAcentos(obj);
+  if (Array.isArray(obj)) return obj.map(corrigirObjeto);
   if (obj && typeof obj === 'object') {
-    const novoObj = {};
-    for (const [key, value] of Object.entries(obj)) {
-      novoObj[key] = corrigirObjetoAcentos(value);
-    }
-    return novoObj;
+    const novo = {};
+    for (const [k, v] of Object.entries(obj)) novo[k] = corrigirObjeto(v);
+    return novo;
   }
   return obj;
 };
-// ==================== FIM DA FUNÇÃO DE CORREÇÃO ====================
+// =======================================================================
 
 // 🔥 CONFIGURAÇÃO CORS - DEVE VIR ANTES DE TUDO!
 const corsOptions = {
@@ -142,16 +122,14 @@ app.use("/api", limiter);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// 🔥 GARANTIR QUE TODAS AS RESPOSTAS JSON TENHAM CHARSET UTF-8 E ACENTOS CORRIGIDOS
+// 🔥 MIDDLEWARE CORRIGIDO: GARANTIR UTF-8 E CORRIGIR ACENTOS
 app.use((req, res, next) => {
   const originalJson = res.json;
   res.json = function(data) {
     // Define o header com charset UTF-8
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    
-    // 🔥 CORRIGIR ACENTOS EM TODA A RESPOSTA JSON
-    const dataCorrigida = corrigirObjetoAcentos(data);
-    
+    // 🔥 CORRIGIR ACENTOS ANTES DE ENVIAR
+    const dataCorrigida = corrigirObjeto(data);
     // Chama o método original com os dados corrigidos
     return originalJson.call(this, dataCorrigida);
   };
