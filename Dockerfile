@@ -25,9 +25,12 @@ RUN apt-get update && apt-get install -y \
     libxt-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# 🔥 CRIAR DIRETÓRIO .R PRIMEIRO
+RUN mkdir -p /root/.R
+
 # CONFIGURAR COMPILAÇÃO MAIS RÁPIDA
-RUN echo 'MAKEFLAGS = -j4' > ~/.R/Makevars
-RUN echo 'CXXFLAGS = -O3 -mtune=native' >> ~/.R/Makevars
+RUN echo 'MAKEFLAGS = -j4' > /root/.R/Makevars
+RUN echo 'CXXFLAGS = -O3 -mtune=native' >> /root/.R/Makevars
 
 # INSTALAR PACOTES EM CAMADAS PARA CACHE
 RUN R -e "install.packages(c('jsonlite', 'plumber', 'MASS'), repos='https://cloud.r-project.org/', Ncpus=2)"
@@ -50,10 +53,6 @@ RUN cd backend && npm ci --only=production 2>/dev/null || cd backend && npm inst
 
 # Copiar código do backend
 COPY backend/ ./backend/
-
-# 🔥 CORREÇÃO: Remover linha problemática
-# Copiar frontend apenas se existir (sem comandos shell)
-# COPY frontend/build ./frontend/build
 
 EXPOSE 5000
 
