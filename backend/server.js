@@ -32,6 +32,66 @@ const errorHandler = require("./middleware/errorHandler");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ==================== 🔥 FUNÇÃO PARA CORRIGIR ACENTOS ====================
+const corrigirAcentos = (texto) => {
+  if (typeof texto !== 'string') return texto;
+  
+  return texto
+    // Sequências HTML mal formatadas (seu problema específico)
+    .replace(/<c3><a1>/g, 'á')
+    .replace(/<c3><a9>/g, 'é')
+    .replace(/<c3><ad>/g, 'í')
+    .replace(/<c3><b3>/g, 'ó')
+    .replace(/<c3><ba>/g, 'ú')
+    .replace(/<c3><a2>/g, 'â')
+    .replace(/<c3><aa>/g, 'ê')
+    .replace(/<c3><b4>/g, 'ô')
+    .replace(/<c3><a3>/g, 'ã')
+    .replace(/<c3><b5>/g, 'õ')
+    .replace(/<c3><a7>/g, 'ç')
+    .replace(/<c3><81>/g, 'Á')
+    .replace(/<c3><89>/g, 'É')
+    .replace(/<c3><8d>/g, 'Í')
+    .replace(/<c3><93>/g, 'Ó')
+    .replace(/<c3><9a>/g, 'Ú')
+    .replace(/<c3><82>/g, 'Â')
+    .replace(/<c3><8a>/g, 'Ê')
+    .replace(/<c3><94>/g, 'Ô')
+    .replace(/<c3><83>/g, 'Ã')
+    .replace(/<c3><95>/g, 'Õ')
+    .replace(/<c3><87>/g, 'Ç')
+    // Unicode escapes
+    .replace(/\\u00e1/g, 'á')
+    .replace(/\\u00e9/g, 'é')
+    .replace(/\\u00ed/g, 'í')
+    .replace(/\\u00f3/g, 'ó')
+    .replace(/\\u00fa/g, 'ú')
+    .replace(/\\u00e2/g, 'â')
+    .replace(/\\u00ea/g, 'ê')
+    .replace(/\\u00f4/g, 'ô')
+    .replace(/\\u00e3/g, 'ã')
+    .replace(/\\u00f5/g, 'õ')
+    .replace(/\\u00e7/g, 'ç');
+};
+
+const corrigirObjetoAcentos = (obj) => {
+  if (typeof obj === 'string') {
+    return corrigirAcentos(obj);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => corrigirObjetoAcentos(item));
+  }
+  if (obj && typeof obj === 'object') {
+    const novoObj = {};
+    for (const [key, value] of Object.entries(obj)) {
+      novoObj[key] = corrigirObjetoAcentos(value);
+    }
+    return novoObj;
+  }
+  return obj;
+};
+// ==================== FIM DA FUNÇÃO DE CORREÇÃO ====================
+
 // 🔥 CONFIGURAÇÃO CORS - DEVE VIR ANTES DE TUDO!
 const corsOptions = {
   origin: process.env.FRONTEND_URL || "http://localhost:3000",
@@ -82,14 +142,18 @@ app.use("/api", limiter);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// 🔥 GARANTIR QUE TODAS AS RESPOSTAS JSON TENHAM CHARSET UTF-8
+// 🔥 GARANTIR QUE TODAS AS RESPOSTAS JSON TENHAM CHARSET UTF-8 E ACENTOS CORRIGIDOS
 app.use((req, res, next) => {
   const originalJson = res.json;
   res.json = function(data) {
     // Define o header com charset UTF-8
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    // Chama o método original
-    return originalJson.call(this, data);
+    
+    // 🔥 CORRIGIR ACENTOS EM TODA A RESPOSTA JSON
+    const dataCorrigida = corrigirObjetoAcentos(data);
+    
+    // Chama o método original com os dados corrigidos
+    return originalJson.call(this, dataCorrigida);
   };
   next();
 });

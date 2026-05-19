@@ -1,0 +1,93 @@
+{
+  "timestamp": "2026-05-19T15:05:14.095Z",
+  "backend": {
+    "existente": false,
+    "arquivos": [],
+    "rotas": [],
+    "modelos_r": [],
+    "servicos": [],
+    "configuracoes": {},
+    "controllers": {
+      "existe": false,
+      "arquivos": []
+    },
+    "models": {
+      "existe": false,
+      "arquivos": []
+    },
+    "routes": {
+      "existe": false,
+      "arquivos": []
+    },
+    "services": {
+      "existe": false,
+      "arquivos": []
+    },
+    "middleware": {
+      "existe": false,
+      "arquivos": []
+    },
+    "rEngine": {
+      "existe": false,
+      "arquivos": []
+    },
+    "utils": {
+      "existe": false,
+      "arquivos": []
+    },
+    "scripts": {
+      "existe": false,
+      "arquivos": []
+    },
+    "r_integration": {
+      "installed": true,
+      "version": ""
+    },
+    "r_packages": {
+      "forecast": true,
+      "tseries": true,
+      "prophet": true,
+      "xgboost": true,
+      "jsonlite": true
+    }
+  },
+  "frontend": {
+    "existente": false,
+    "componentes": [],
+    "paginas": [],
+    "servicos": [],
+    "utilitarios": [],
+    "components": {
+      "existe": false,
+      "arquivos": []
+    },
+    "pages": {
+      "existe": false,
+      "arquivos": []
+    },
+    "services": {
+      "existe": false,
+      "arquivos": []
+    },
+    "utils": {
+      "existe": false,
+      "arquivos": []
+    },
+    "contexts": {
+      "existe": false,
+      "arquivos": []
+    }
+  },
+  "problemas": [
+    "Diretório controllers/ não encontrado",
+    "Diretório models/ não encontrado",
+    "Diretório routes/ não encontrado",
+    "Diretório services/ não encontrado",
+    "Diretório middleware/ não encontrado",
+    "Diretório rEngine/ não encontrado",
+    "Diretório utils/ não encontrado",
+    "Diretório scripts/ não encontrado",
+    "Arquivo .env não configurado"
+  ],
+  "sugestoes": []
+}
