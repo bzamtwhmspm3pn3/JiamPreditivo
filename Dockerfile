@@ -25,27 +25,16 @@ RUN apt-get update && apt-get install -y \
     libxt-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 🔥 CONFIGURAR COMPILAÇÃO MAIS RÁPIDA
+# CONFIGURAR COMPILAÇÃO MAIS RÁPIDA
 RUN echo 'MAKEFLAGS = -j4' > ~/.R/Makevars
 RUN echo 'CXXFLAGS = -O3 -mtune=native' >> ~/.R/Makevars
 
-# 🔥 INSTALAR PACOTES EM CAMADAS PARA CACHE (do mais leve ao mais pesado)
-# Camada 1: Pacotes leves e sem dependências complexas
+# INSTALAR PACOTES EM CAMADAS PARA CACHE
 RUN R -e "install.packages(c('jsonlite', 'plumber', 'MASS'), repos='https://cloud.r-project.org/', Ncpus=2)"
-
-# Camada 2: Pacotes médios
 RUN R -e "install.packages(c('glmnet', 'tseries', 'lubridate', 'markovchain'), repos='https://cloud.r-project.org/', Ncpus=2)"
-
-# Camada 3: forecast (moderado)
 RUN R -e "install.packages('forecast', repos='https://cloud.r-project.org/', Ncpus=2)"
-
-# Camada 4: randomForest e actuar
 RUN R -e "install.packages(c('randomForest', 'actuar'), repos='https://cloud.r-project.org/', Ncpus=2)"
-
-# Camada 5: xgboost (mais pesado - usar pre-compilado se possível)
 RUN R -e "install.packages('xgboost', repos='https://cloud.r-project.org/', Ncpus=2)"
-
-# Camada 6: caret (depende de muitos pacotes)
 RUN R -e "install.packages('caret', repos='https://cloud.r-project.org/', Ncpus=2)"
 
 # Verificar instalação
@@ -62,8 +51,9 @@ RUN cd backend && npm ci --only=production 2>/dev/null || cd backend && npm inst
 # Copiar código do backend
 COPY backend/ ./backend/
 
-# Copiar frontend build se existir
-COPY frontend/build ./frontend/build 2>/dev/null || echo "Frontend build não encontrado"
+# 🔥 CORREÇÃO: Remover linha problemática
+# Copiar frontend apenas se existir (sem comandos shell)
+# COPY frontend/build ./frontend/build
 
 EXPOSE 5000
 
