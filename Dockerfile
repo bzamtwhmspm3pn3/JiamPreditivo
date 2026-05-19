@@ -1,59 +1,33 @@
 # Usar Node.js como base
 FROM node:20-slim
 
-# Instalar R e dependências de compilação
+# Instalar R e dependências necessárias
 RUN apt-get update && apt-get install -y \
     r-base \
     r-base-dev \
     libcurl4-openssl-dev \
     libssl-dev \
     libxml2-dev \
-    libgit2-dev \
-    libharfbuzz-dev \
-    libfribidi-dev \
-    libfreetype6-dev \
-    libpng-dev \
-    libtiff5-dev \
-    libjpeg-dev \
-    cmake \
-    make \
-    g++ \
-    gcc \
-    fort77 \
-    libreadline-dev \
-    libx11-dev \
-    libxt-dev \
+    && R -e "install.packages(c('plumber', 'jsonlite', 'glmnet', 'MASS', 'randomForest', 'xgboost', 'caret', 'forecast', 'tseries', 'markovchain', 'actuar'), repos='https://cloud.r-project.org/')" \
     && rm -rf /var/lib/apt/lists/*
 
-# 🔥 CRIAR DIRETÓRIO .R PRIMEIRO
-RUN mkdir -p /root/.R
-
-# CONFIGURAR COMPILAÇÃO MAIS RÁPIDA
-RUN echo 'MAKEFLAGS = -j4' > /root/.R/Makevars
-RUN echo 'CXXFLAGS = -O3 -mtune=native' >> /root/.R/Makevars
-
-# INSTALAR PACOTES EM CAMADAS PARA CACHE
-RUN R -e "install.packages(c('jsonlite', 'plumber', 'MASS'), repos='https://cloud.r-project.org/', Ncpus=2)"
-RUN R -e "install.packages(c('glmnet', 'tseries', 'lubridate', 'markovchain'), repos='https://cloud.r-project.org/', Ncpus=2)"
-RUN R -e "install.packages('forecast', repos='https://cloud.r-project.org/', Ncpus=2)"
-RUN R -e "install.packages(c('randomForest', 'actuar'), repos='https://cloud.r-project.org/', Ncpus=2)"
-RUN R -e "install.packages('xgboost', repos='https://cloud.r-project.org/', Ncpus=2)"
-RUN R -e "install.packages('caret', repos='https://cloud.r-project.org/', Ncpus=2)"
-
-# Verificar instalação
-RUN R -e "library(jsonlite); library(plumber); library(glmnet); library(MASS); library(randomForest); library(xgboost); library(caret); library(forecast); library(tseries); library(markovchain); library(actuar); print('✅ Todos os pacotes instalados com sucesso')"
-
+# Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar apenas package.json primeiro (para cache do npm)
+# Copiar arquivos de dependência do backend
 COPY backend/package*.json ./backend/
 
 # Instalar dependências Node.js
-RUN cd backend && npm ci --only=production 2>/dev/null || cd backend && npm install
+RUN cd backend && npm install
 
-# Copiar código do backend
+# Copiar todo o código do backend
 COPY backend/ ./backend/
 
+# Copiar frontend (opcional, se quiser servir via backend)
+COPY frontend/ ./frontend/
+
+# Expor a porta que o backend usa
 EXPOSE 5000
 
+# Comando para iniciar o servidor
 CMD ["node", "backend/server.js"]
