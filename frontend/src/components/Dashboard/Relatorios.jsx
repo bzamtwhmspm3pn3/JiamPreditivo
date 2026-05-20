@@ -657,6 +657,80 @@ const Badge = ({ children, variant = 'default', className = '' }) => {
   );
 };
 
+
+// ============ FUNÇÕES DE SEGURANÇA PARA EXIBIÇÃO ============
+
+// Formatar data com segurança
+const formatarDataSegura = (timestamp) => {
+  if (!timestamp) return 'Data não disponível';
+  try {
+    let data;
+    if (typeof timestamp === 'string') {
+      data = new Date(timestamp);
+    } else if (typeof timestamp === 'number') {
+      data = new Date(timestamp);
+    } else if (timestamp._seconds) {
+      data = new Date(timestamp._seconds * 1000);
+    } else if (timestamp instanceof Date) {
+      data = timestamp;
+    } else {
+      return 'Data inválida';
+    }
+    
+    if (isNaN(data.getTime())) return 'Data inválida';
+    return data.toLocaleDateString('pt-BR') + ' ' + data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch(e) {
+    return 'Data inválida';
+  }
+};
+
+// Extrair MAPE de diferentes estruturas
+const extrairMAPE = (modelo) => {
+  if (!modelo) return '0%';
+  
+  // Tentar diferentes caminhos onde o MAPE pode estar
+  const mape = 
+    modelo.metrics?.mape ||
+    modelo.qualidade?.mape ||
+    modelo.resultado?.metricas?.ajuste?.MAPE ||
+    modelo.resultado?.metricas?.MAPE ||
+    modelo.metricas?.ajuste?.MAPE ||
+    modelo.metricas?.MAPE ||
+    modelo.qualidade_ajuste?.mape_valor ||
+    modelo.MAPE ||
+    modelo.mape;
+  
+  if (mape && !isNaN(mape)) {
+    return typeof mape === 'number' ? mape.toFixed(1) + '%' : mape;
+  }
+  return '0%';
+};
+
+// Extrair classificação
+const extrairClassificacao = (modelo) => {
+  if (!modelo) return 'Não classificado';
+  
+  const classMap = {
+    'EXCELENTE': 'Excelente',
+    'EXCELLENT': 'Excelente',
+    'BOA': 'Boa',
+    'GOOD': 'Boa',
+    'MODERADA': 'Moderada',
+    'MODERATE': 'Moderada',
+    'BAIXA': 'Baixa',
+    'POOR': 'Baixa',
+    'FRACA': 'Fraca'
+  };
+  
+  const classificacao = 
+    modelo.classificacao ||
+    modelo.qualidade?.classificacao ||
+    modelo.qualidade_ajuste?.classificacao_geral ||
+    modelo.resultado?.qualidade_ajuste?.classificacao_geral;
+  
+  return classMap[classificacao] || classificacao || 'Não classificado';
+};
+
 // ============ CHATBOT PARA CONSULTAS SOBRE MODELOS E ANOMALIAS ============
 
 const ChatbotModelos = ({ modelosAnalisados, onFiltrar }) => {
@@ -1994,7 +2068,7 @@ const abrirRelatorioDetalhado = async (modelo) => {
                       <div>
                         <p className="font-medium text-gray-800">{modelo.nome}</p>
                         <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <span>{new Date(modelo.timestamp).toLocaleString()}</span>
+                          <span>{formatarDataSegura(modelo.timestamp)}</span>
                           <span>•</span>
                           <Badge variant={
                             modelo.classificacao === 'EXCELENTE' ? 'success' :
@@ -2437,8 +2511,8 @@ const abrirRelatorioDetalhado = async (modelo) => {
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-600">Performance</span>
                       <span className="font-bold" style={{ color: CORES_CLASSIFICACAO[modelo.classificacao] }}>
-                        {((modelo.pontuacao || 0) * 100).toFixed(1)}%
-                      </span>
+  {extrairMAPE(modelo)}
+</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -2482,9 +2556,9 @@ const abrirRelatorioDetalhado = async (modelo) => {
                   
                   <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
                     <span className="flex items-center gap-1">
-                      <ClockIcon className="w-3 h-3" />
-                      {new Date(modelo.timestamp).toLocaleString('pt-BR')}
-                    </span>
+  <ClockIcon className="w-3 h-3" />
+  {formatarDataSegura(modelo.timestamp)}
+</span>
                   </div>
                 </div>
               </motion.div>

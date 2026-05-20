@@ -431,13 +431,28 @@ tryCatch({
     frequencia = freq_real
   )
   
-  resultado_final$dados_originais <- list(
+  # Dados originais - COM VALORES HISTÓRICOS REAIS
+resultado_final$dados_originais <- list(
+    # ✅ ADICIONAR OS VALORES HISTÓRICOS REAIS
+    dados = lapply(1:nrow(df_prophet), function(i) {
+      list(
+        ds = as.character(df_prophet$ds[i]),
+        y = df_prophet$y[i],
+        data = as.character(df_prophet$ds[i]),
+        valor = df_prophet$y[i],
+        periodo = as.character(format(df_prophet$ds[i], "%Y"))
+      )
+    }),
+    historico = as.list(df_prophet$y),
+    datas = as.list(as.character(df_prophet$ds)),
+    # Manter as estatísticas originais
     primeira_data = as.character(min(df_prophet$ds)),
     ultima_data = as.character(max(df_prophet$ds)),
     media = round(mean(df_prophet$y, na.rm = TRUE), 2),
     desvio_padrao = round(sd(df_prophet$y, na.rm = TRUE), 2),
     minimo = round(min(df_prophet$y, na.rm = TRUE), 2),
-    maximo = round(max(df_prophet$y, na.rm = TRUE), 2)
+    maximo = round(max(df_prophet$y, na.rm = TRUE), 2),
+    n_observacoes = nrow(df_prophet)
   )
   
   resultado_final$periodo_previsao <- list(

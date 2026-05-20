@@ -595,7 +595,9 @@ processar_resultado_ets_profissional <- function(modelo, ts_data, n_previsoes, p
     # Dados originais
     dados_originais = list(
       n_observacoes = length(ts_data),
-      estatisticas = list(
+        historico = as.list(as.numeric(ts_data)),
+        datas = as.list(as.numeric(time(ts_data))),
+        estatisticas = list(
         media = as.numeric(mean(ts_data, na.rm = TRUE)),
         mediana = as.numeric(median(ts_data, na.rm = TRUE)),
         desvio_padrao = as.numeric(sd(ts_data, na.rm = TRUE)),
