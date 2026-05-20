@@ -660,75 +660,148 @@ const Badge = ({ children, variant = 'default', className = '' }) => {
 
 // ============ FUNÇÕES DE SEGURANÇA PARA EXIBIÇÃO ============
 
-// Formatar data com segurança
+// Formatar data com segurança - CORRIGIDA
 const formatarDataSegura = (timestamp) => {
   if (!timestamp) return 'Data não disponível';
   try {
     let data;
-    if (typeof timestamp === 'string') {
-      data = new Date(timestamp);
-    } else if (typeof timestamp === 'number') {
-      data = new Date(timestamp);
-    } else if (timestamp._seconds) {
+    
+    // Se for timestamp do Firebase (com _seconds)
+    if (timestamp && typeof timestamp === 'object' && timestamp._seconds) {
       data = new Date(timestamp._seconds * 1000);
-    } else if (timestamp instanceof Date) {
+    }
+    // Se for string ISO
+    else if (typeof timestamp === 'string') {
+      data = new Date(timestamp);
+    }
+    // Se for número (timestamp em milissegundos)
+    else if (typeof timestamp === 'number') {
+      data = new Date(timestamp);
+    }
+    // Se já for Date
+    else if (timestamp instanceof Date) {
       data = timestamp;
-    } else {
-      return 'Data inválida';
+    }
+    else {
+      return 'Data não disponível';
     }
     
-    if (isNaN(data.getTime())) return 'Data inválida';
+    if (isNaN(data.getTime())) return 'Data não disponível';
+    
     return data.toLocaleDateString('pt-BR') + ' ' + data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   } catch(e) {
-    return 'Data inválida';
+    return 'Data não disponível';
   }
 };
 
-// Extrair MAPE de diferentes estruturas
+// Extrair nome do modelo com segurança
+const extrairNomeModelo = (modelo) => {
+  if (!modelo) return 'Modelo sem nome';
+  return modelo.nome || modelo.name || 'Modelo sem nome';
+};
+
+// Extrair tipo do modelo com segurança
+const extrairTipoModelo = (modelo) => {
+  if (!modelo) return 'desconhecido';
+  return modelo.tipo || modelo.type || 'desconhecido';
+};
+
+// Extrair MAPE de diferentes estruturas - CORRIGIDA
 const extrairMAPE = (modelo) => {
   if (!modelo) return '0%';
   
   // Tentar diferentes caminhos onde o MAPE pode estar
-  const mape = 
-    modelo.metrics?.mape ||
-    modelo.qualidade?.mape ||
-    modelo.resultado?.metricas?.ajuste?.MAPE ||
-    modelo.resultado?.metricas?.MAPE ||
-    modelo.metricas?.ajuste?.MAPE ||
-    modelo.metricas?.MAPE ||
-    modelo.qualidade_ajuste?.mape_valor ||
-    modelo.MAPE ||
-    modelo.mape;
+  let mape = null;
+  
+  // De resultado.qualidade
+  if (modelo.resultado?.qualidade?.MAPE) mape = modelo.resultado.qualidade.MAPE;
+  else if (modelo.resultado?.qualidade?.mape) mape = modelo.resultado.qualidade.mape;
+  // De resultado diretamente
+  else if (modelo.resultado?.MAPE) mape = modelo.resultado.MAPE;
+  else if (modelo.resultado?.mape) mape = modelo.resultado.mape;
+  // De metricas
+  else if (modelo.metricas?.MAPE) mape = modelo.metricas.MAPE;
+  else if (modelo.metricas?.mape) mape = modelo.metricas.mape;
+  // De qualidade_ajuste
+  else if (modelo.qualidade_ajuste?.mape_valor) mape = modelo.qualidade_ajuste.mape_valor;
+  // Direto no modelo
+  else if (modelo.MAPE) mape = modelo.MAPE;
+  else if (modelo.mape) mape = modelo.mape;
   
   if (mape && !isNaN(mape)) {
-    return typeof mape === 'number' ? mape.toFixed(1) + '%' : mape;
+    const valor = typeof mape === 'number' ? mape : parseFloat(mape);
+    if (!isNaN(valor)) {
+      return valor.toFixed(1) + '%';
+    }
   }
   return '0%';
 };
 
-// Extrair classificação
+// Extrair classificação - CORRIGIDA
 const extrairClassificacao = (modelo) => {
-  if (!modelo) return 'Não classificado';
+  if (!modelo) return 'FRACA';
   
   const classMap = {
-    'EXCELENTE': 'Excelente',
-    'EXCELLENT': 'Excelente',
-    'BOA': 'Boa',
-    'GOOD': 'Boa',
-    'MODERADA': 'Moderada',
-    'MODERATE': 'Moderada',
-    'BAIXA': 'Baixa',
-    'POOR': 'Baixa',
-    'FRACA': 'Fraca'
+    'EXCELENTE': 'EXCELENTE',
+    'EXCELLENT': 'EXCELENTE',
+    'BOA': 'BOA',
+    'GOOD': 'BOA',
+    'MODERADA': 'MODERADA',
+    'MODERATE': 'MODERADA',
+    'BAIXA': 'FRACA',
+    'POOR': 'FRACA',
+    'FRACA': 'FRACA'
   };
   
-  const classificacao = 
-    modelo.classificacao ||
-    modelo.qualidade?.classificacao ||
-    modelo.qualidade_ajuste?.classificacao_geral ||
-    modelo.resultado?.qualidade_ajuste?.classificacao_geral;
+  let classificacao = null;
   
-  return classMap[classificacao] || classificacao || 'Não classificado';
+  if (modelo.classificacao) classificacao = modelo.classificacao;
+  else if (modelo.qualidade?.classificacao) classificacao = modelo.qualidade.classificacao;
+  else if (modelo.qualidade_ajuste?.classificacao_geral) classificacao = modelo.qualidade_ajuste.classificacao_geral;
+  else if (modelo.resultado?.qualidade_ajuste?.classificacao_geral) classificacao = modelo.resultado.qualidade_ajuste.classificacao_geral;
+  
+  const classificacaoUpper = (classificacao || '').toUpperCase();
+  
+  return classMap[classificacaoUpper] || classificacao || 'FRACA';
+};
+
+// Extrair pontuação com segurança
+const extrairPontuacao = (modelo) => {
+  if (!modelo) return 0;
+  
+  // Verificar se há pontuação direta
+  if (typeof modelo.pontuacao === 'number') return modelo.pontuacao;
+  
+  // Tentar extrair de análise IA
+  if (modelo.analiseIA?.pontuacao) return modelo.analiseIA.pontuacao;
+  
+  // Tentar extrair do MAPE (inverso)
+  const mapeStr = extrairMAPE(modelo);
+  const mape = parseFloat(mapeStr);
+  
+  if (!isNaN(mape) && mape > 0) {
+    if (mape < 5) return 0.95;
+    if (mape < 10) return 0.85;
+    if (mape < 15) return 0.75;
+    if (mape < 20) return 0.65;
+    if (mape < 30) return 0.5;
+    if (mape < 50) return 0.35;
+    return 0.2;
+  }
+  
+  return 0.5;
+};
+
+// Extrair timestamp com segurança
+const extrairTimestamp = (modelo) => {
+  if (!modelo) return null;
+  
+  if (modelo.timestamp) return modelo.timestamp;
+  if (modelo.createdAt) return modelo.createdAt;
+  if (modelo.dataCriacao) return modelo.dataCriacao;
+  if (modelo.dataExecucao) return modelo.dataExecucao;
+  
+  return null;
 };
 
 // ============ CHATBOT PARA CONSULTAS SOBRE MODELOS E ANOMALIAS ============
@@ -780,7 +853,7 @@ const ChatbotModelos = ({ modelosAnalisados, onFiltrar }) => {
           resposta = `🔍 Encontrei ${modelosComAnomalias.length} modelo(s) com anomalias:\n\n`;
           modelosComAnomalias.slice(0, 3).forEach(m => {
             const totalAnomalias = (m.anomalias?.length || 0) + (m.fraudes?.length || 0);
-            resposta += `• **${m.nome}** (${m.tipo}): ${totalAnomalias} problema(s)\n`;
+            resposta += `• **${extrairNomeModelo(m)}** (${extrairTipoModelo(m)}): ${totalAnomalias} problema(s)\n`;
           });
           acao = 'anomalias';
         }
@@ -791,17 +864,21 @@ const ChatbotModelos = ({ modelosAnalisados, onFiltrar }) => {
         
         for (const palavra of palavras) {
           modeloEncontrado = modelosAnalisados.find(m => 
-            m.nome.toLowerCase().includes(palavra.toLowerCase()) ||
-            m.tipo.toLowerCase().includes(palavra.toLowerCase())
+            extrairNomeModelo(m).toLowerCase().includes(palavra.toLowerCase()) ||
+            extrairTipoModelo(m).toLowerCase().includes(palavra.toLowerCase())
           );
           if (modeloEncontrado) break;
         }
 
         if (modeloEncontrado) {
-          resposta = `📊 **Detalhes do modelo: ${modeloEncontrado.nome}**\n\n`;
-          resposta += `• **Tipo:** ${modeloEncontrado.tipo}\n`;
-          resposta += `• **Classificação:** ${modeloEncontrado.classificacao}\n`;
-          resposta += `• **Performance:** ${(modeloEncontrado.pontuacao * 100).toFixed(1)}%\n\n`;
+          const classificacao = extrairClassificacao(modeloEncontrado);
+          const pontuacao = extrairPontuacao(modeloEncontrado);
+          
+          resposta = `📊 **Detalhes do modelo: ${extrairNomeModelo(modeloEncontrado)}**\n\n`;
+          resposta += `• **Tipo:** ${extrairTipoModelo(modeloEncontrado)}\n`;
+          resposta += `• **Classificação:** ${classificacao}\n`;
+          resposta += `• **Performance:** ${(pontuacao * 100).toFixed(1)}%\n`;
+          resposta += `• **MAPE:** ${extrairMAPE(modeloEncontrado)}\n\n`;
           
           if (modeloEncontrado.anomalias?.length > 0) {
             resposta += `**Anomalias:**\n`;
@@ -1101,15 +1178,14 @@ class AnalisadorIA {
     const qualidade = resultado.qualidade || resultado.metrics || resultado.analise || {};
     const parametros = modelo.parametros || {};
     
-    const metricas = this._extrairMetricasPorTipo(modelo.tipo, qualidade, resultado);
-    
+    // Extrair MAPE
     let mape = 0;
     if (qualidade.MAPE !== undefined) mape = Number(qualidade.MAPE);
     else if (qualidade.mape !== undefined) mape = Number(qualidade.mape);
     else if (resultado.MAPE !== undefined) mape = Number(resultado.MAPE);
     else if (resultado.mape !== undefined) mape = Number(resultado.mape);
-    else if (metricas.mape !== undefined) mape = Number(metricas.mape);
     
+    // Extrair número de observações
     let nObservacoes = 0;
     if (qualidade.n_observacoes !== undefined) nObservacoes = Number(qualidade.n_observacoes);
     else if (qualidade.n !== undefined) nObservacoes = Number(qualidade.n);
@@ -1120,12 +1196,12 @@ class AnalisadorIA {
     else if (parametros.dados?.length) nObservacoes = parametros.dados.length;
     
     return {
-      tipo: modelo.tipo || 'desconhecido',
-      nome: modelo.nome || 'Modelo sem nome',
-      timestamp: modelo.timestamp || new Date().toISOString(),
+      tipo: extrairTipoModelo(modelo),
+      nome: extrairNomeModelo(modelo),
+      timestamp: extrairTimestamp(modelo) || new Date().toISOString(),
       nObservacoes: isNaN(nObservacoes) ? 0 : nObservacoes,
       mape: isNaN(mape) ? 0 : mape,
-      metricas: metricas,
+      metricas: this._extrairMetricasPorTipo(modelo.tipo, qualidade, resultado),
       coeficientes: (resultado.coeficientes || []).map(c => ({
         termo: c.termo || c.name || 'variável',
         estimativa: Number(c.estimativa || c.estimate || 0),
@@ -1266,7 +1342,7 @@ class AnalisadorIA {
       });
     }
     
-    if (dados.mape < 3 && modelo.nome && modelo.nome.toLowerCase().includes('inflacao')) {
+    if (dados.mape < 3 && dados.nome && dados.nome.toLowerCase().includes('inflacao')) {
       fraudes.push({
         tipo: 'paradoxo_inflacao',
         severidade: 'baixa',
@@ -1288,7 +1364,7 @@ class AnalisadorIA {
     
     if (!modelo || !dados || dados.nObservacoes < 10) return paradoxos;
     
-    if (modelo.nome && modelo.nome.toLowerCase().includes('inflacao') && dados.nObservacoes > 20) {
+    if (dados.nome && dados.nome.toLowerCase().includes('inflacao') && dados.nObservacoes > 20) {
       paradoxos.push({
         tipo: 'contextual',
         severidade: 'informativo',
@@ -1436,14 +1512,14 @@ const prepararDadosParaRelatorio = (modelo) => {
   if (!modelo) return null;
 
   const resultado = modelo.resultado || modelo.dados || {};
-  const tipo = modelo.tipo || 'desconhecido';
+  const tipo = extrairTipoModelo(modelo);
   const parametros = modelo.parametros || {};
   
   const dadosProcessados = {
-    nome: modelo.nome || 'Modelo sem nome',
+    nome: extrairNomeModelo(modelo),
     tipo: tipo,
-    classificacao: modelo.classificacao || 'MODERADA',
-    pontuacao: modelo.pontuacao || 0.5,
+    classificacao: extrairClassificacao(modelo),
+    pontuacao: extrairPontuacao(modelo),
     
     metricas: {
       r2: resultado.qualidade?.R2 || resultado.r2 || 0,
@@ -1488,7 +1564,7 @@ const prepararDadosParaRelatorio = (modelo) => {
 };
 
 const selecionarRelatorioPorTipo = (modelo, dadosProcessados) => {
-  const tipo = modelo.tipo || 'desconhecido';
+  const tipo = extrairTipoModelo(modelo);
   
   const props = {
     modelo: modelo,
@@ -1735,7 +1811,7 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
   const analisarModeloComIA = (modelo, todosModelos) => {
     try {
       const analiseBase = analisarQualquerModelo({
-        tipo: modelo.tipo,
+        tipo: extrairTipoModelo(modelo),
         ...modelo.resultado
       }, modelo.parametros);
       
@@ -1749,8 +1825,8 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
           insights: analiseIA.insights || [],
           recomendacoes: analiseIA.recomendacoes || []
         },
-        classificacao: modelo.classificacao || mapearClassificacao(analiseIA.pontuacao || 0.5),
-        pontuacao: modelo.pontuacao || analiseIA.pontuacao || 0.5,
+        classificacao: extrairClassificacao(modelo),
+        pontuacao: extrairPontuacao(modelo),
         nivelConfianca: analiseIA.nivelConfianca || 'moderado',
         anomalias: analiseIA.anomalias || [],
         fraudes: analiseIA.fraudes || [],
@@ -1833,13 +1909,14 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
     let totalFraudes = 0;
     
     modelos.forEach((modelo) => {
-      const tipo = modelo.tipo || 'desconhecido';
+      const tipo = extrairTipoModelo(modelo);
       porTipo[tipo] = (porTipo[tipo] || 0) + 1;
       
-      const classificacao = modelo.classificacao || 'FRACA';
+      const classificacao = extrairClassificacao(modelo);
       porClassificacao[classificacao] = (porClassificacao[classificacao] || 0) + 1;
       
-      somaPerformance += modelo.pontuacao || 0;
+      const pontuacao = extrairPontuacao(modelo);
+      somaPerformance += pontuacao;
       totalAnomalias += modelo.anomalias?.length || 0;
       totalFraudes += modelo.fraudes?.length || 0;
     });
@@ -1861,7 +1938,7 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
         cor: CORES_CLASSIFICACAO[classificacao] || '#6B7280'
       }));
     
-    const modelosComPontuacao = modelos.filter(m => m.pontuacao !== undefined);
+    const modelosComPontuacao = modelos.map(m => ({ ...m, pontuacao: extrairPontuacao(m) }));
     const melhorModelo = modelosComPontuacao.length > 0 
       ? modelosComPontuacao.reduce((a, b) => (a.pontuacao > b.pontuacao ? a : b), modelosComPontuacao[0])
       : null;
@@ -1871,12 +1948,13 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
       : null;
     
     const evolucaoTemporal = modelosComPontuacao
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .filter(m => m.timestamp)
+      .sort((a, b) => new Date(extrairTimestamp(a)) - new Date(extrairTimestamp(b)))
       .map(m => ({
-        data: new Date(m.timestamp).toLocaleDateString('pt-BR'),
+        data: formatarDataSegura(extrairTimestamp(m)),
         pontuacao: m.pontuacao,
-        tipo: m.tipo,
-        nome: m.nome
+        tipo: extrairTipoModelo(m),
+        nome: extrairNomeModelo(m)
       }));
     
     return {
@@ -1899,7 +1977,7 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
     const gruposPorNome = {};
     
     modelos.forEach(modelo => {
-      const nomeBase = modelo.nome?.toLowerCase().trim() || 'sem_nome';
+      const nomeBase = (extrairNomeModelo(modelo) || 'sem_nome').toLowerCase().trim();
       if (!gruposPorNome[nomeBase]) {
         gruposPorNome[nomeBase] = [];
       }
@@ -1907,19 +1985,23 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
     });
     
     Object.keys(gruposPorNome).forEach(nome => {
-      gruposPorNome[nome].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      gruposPorNome[nome].sort((a, b) => {
+        const tsA = extrairTimestamp(a);
+        const tsB = extrairTimestamp(b);
+        return new Date(tsB) - new Date(tsA);
+      });
     });
     
     return Object.entries(gruposPorNome).map(([nome, modelos]) => ({
-      nome: modelos[0]?.nome || nome,
+      nome: extrairNomeModelo(modelos[0]) || nome,
       modelos,
       total: modelos.length,
-      mediaPontuacao: Number((modelos.reduce((sum, m) => sum + (m.pontuacao || 0), 0) / modelos.length).toFixed(2)),
-      tipos: [...new Set(modelos.map(m => m.tipo))],
-      cor: modelos[0]?.tipo ? (CORES_MODELOS[modelos[0].tipo] || '#6B7280') : '#6B7280',
+      mediaPontuacao: Number((modelos.reduce((sum, m) => sum + extrairPontuacao(m), 0) / modelos.length).toFixed(2)),
+      tipos: [...new Set(modelos.map(m => extrairTipoModelo(m)))],
+      cor: modelos[0]?.tipo ? (CORES_MODELOS[extrairTipoModelo(modelos[0])] || '#6B7280') : '#6B7280',
       periodo: {
-        inicio: new Date(modelos[modelos.length - 1]?.timestamp).toLocaleDateString(),
-        fim: new Date(modelos[0]?.timestamp).toLocaleDateString()
+        inicio: formatarDataSegura(extrairTimestamp(modelos[modelos.length - 1])),
+        fim: formatarDataSegura(extrairTimestamp(modelos[0]))
       },
       exibirComoPasta: modelos.length > 1
     })).sort((a, b) => b.total - a.total);
@@ -1935,11 +2017,14 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
     }
     
     return modelosBase.filter(modelo => {
-      if (filtroTipo !== 'todos' && modelo.tipo !== filtroTipo) return false;
-      if (filtroClassificacao !== 'todos' && modelo.classificacao !== filtroClassificacao) return false;
+      if (filtroTipo !== 'todos' && extrairTipoModelo(modelo) !== filtroTipo) return false;
+      if (filtroClassificacao !== 'todos' && extrairClassificacao(modelo) !== filtroClassificacao) return false;
       
       if (filtroPeriodo !== 'todos') {
-        const data = new Date(modelo.timestamp);
+        const timestamp = extrairTimestamp(modelo);
+        if (!timestamp) return false;
+        
+        const data = new Date(timestamp);
         const hoje = new Date();
         const diff = hoje - data;
         const dias = diff / (1000 * 60 * 60 * 24);
@@ -1953,9 +2038,9 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
       if (pesquisa) {
         const termo = pesquisa.toLowerCase();
         return (
-          (modelo.nome && modelo.nome.toLowerCase().includes(termo)) ||
-          (modelo.tipo && modelo.tipo.toLowerCase().includes(termo)) ||
-          (modelo.classificacao && modelo.classificacao.toLowerCase().includes(termo)) ||
+          (extrairNomeModelo(modelo).toLowerCase().includes(termo)) ||
+          (extrairTipoModelo(modelo).toLowerCase().includes(termo)) ||
+          (extrairClassificacao(modelo).toLowerCase().includes(termo)) ||
           modelo.anomalias?.some(a => a.titulo?.toLowerCase().includes(termo))
         );
       }
@@ -1965,42 +2050,45 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
       const ordem = ordemCrescente ? 1 : -1;
       
       switch (ordenarPor) {
-        case 'nome': return ordem * (a.nome || '').localeCompare(b.nome || '');
-        case 'tipo': return ordem * (a.tipo || '').localeCompare(b.tipo || '');
+        case 'nome': return ordem * extrairNomeModelo(a).localeCompare(extrairNomeModelo(b));
+        case 'tipo': return ordem * extrairTipoModelo(a).localeCompare(extrairTipoModelo(b));
         case 'classificacao':
           const ordemClass = { 'EXCELENTE': 4, 'BOA': 3, 'MODERADA': 2, 'FRACA': 1 };
-          return ordem * ((ordemClass[a.classificacao] || 0) - (ordemClass[b.classificacao] || 0));
-        case 'pontuacao': return ordem * ((a.pontuacao || 0) - (b.pontuacao || 0));
-        default: return ordem * (new Date(b.timestamp) - new Date(a.timestamp));
+          return ordem * ((ordemClass[extrairClassificacao(a)] || 0) - (ordemClass[extrairClassificacao(b)] || 0));
+        case 'pontuacao': return ordem * (extrairPontuacao(a) - extrairPontuacao(b));
+        default: 
+          const tsA = extrairTimestamp(a);
+          const tsB = extrairTimestamp(b);
+          return ordem * (new Date(tsB) - new Date(tsA));
       }
     });
   }, [modelosAtivos, modelosArquivados, filtroStatus, agrupamentoAtivo, filtroTipo, filtroClassificacao, filtroPeriodo, pesquisa, ordenarPor, ordemCrescente]);
 
-const abrirRelatorioDetalhado = async (modelo) => {
-  try {
-    setLoading(true);
-    
-    // Buscar o modelo completo do MongoDB
-    const response = await ModelosService.carregar(modelo.id);
-    
-    if (response.success) {
-      const modeloCompleto = response.modelo;
-      console.log('📦 Modelo completo carregado:', modeloCompleto);
+  const abrirRelatorioDetalhado = async (modelo) => {
+    try {
+      setLoading(true);
       
-      // Preparar dados para o relatório
-      const dadosProcessados = prepararDadosParaRelatorio(modeloCompleto);
+      // Buscar o modelo completo do MongoDB
+      const response = await ModelosService.carregar(modelo.id);
       
-      setRelatorioDetalhado(modeloCompleto);
-      setDadosProcessadosRelatorio(dadosProcessados);
-    } else {
-      console.error('❌ Erro ao carregar modelo:', response.error);
+      if (response.success) {
+        const modeloCompleto = response.modelo;
+        console.log('📦 Modelo completo carregado:', modeloCompleto);
+        
+        // Preparar dados para o relatório
+        const dadosProcessados = prepararDadosParaRelatorio(modeloCompleto);
+        
+        setRelatorioDetalhado(modeloCompleto);
+        setDadosProcessadosRelatorio(dadosProcessados);
+      } else {
+        console.error('❌ Erro ao carregar modelo:', response.error);
+      }
+    } catch (error) {
+      console.error('❌ Erro:', error);
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('❌ Erro:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   // ============ RENDERIZAÇÕES ============
 
@@ -2035,7 +2123,7 @@ const abrirRelatorioDetalhado = async (modelo) => {
                 </div>
                 <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
                   <span>📅 {pasta.periodo.inicio} - {pasta.periodo.fim}</span>
-                  <span>📊 Média: {pasta.mediaPontuacao}%</span>
+                  <span>📊 Média: {pasta.mediaPontuacao * 100}%</span>
                 </div>
               </div>
             </div>
@@ -2055,63 +2143,70 @@ const abrirRelatorioDetalhado = async (modelo) => {
               className="pl-12 pr-4 overflow-hidden"
             >
               <div className="py-2 space-y-2">
-                {pasta.modelos.map((modelo) => (
-                  <div
-                    key={modelo.id}
-                    className="bg-gray-50 rounded-lg p-3 flex items-center justify-between hover:bg-gray-100 transition"
-                  >
-                    <div 
-                      className="flex items-center gap-3 flex-1 cursor-pointer"
-                      onClick={() => abrirRelatorioDetalhado(modelo)}
+                {pasta.modelos.map((modelo) => {
+                  const pontuacao = extrairPontuacao(modelo);
+                  const classificacao = extrairClassificacao(modelo);
+                  const mape = extrairMAPE(modelo);
+                  const timestamp = extrairTimestamp(modelo);
+                  
+                  return (
+                    <div
+                      key={modelo.id}
+                      className="bg-gray-50 rounded-lg p-3 flex items-center justify-between hover:bg-gray-100 transition"
                     >
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CORES_MODELOS[modelo.tipo] || '#888' }} />
-                      <div>
-                        <p className="font-medium text-gray-800">{modelo.nome}</p>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <span>{formatarDataSegura(modelo.timestamp)}</span>
-                          <span>•</span>
-                          <Badge variant={
-                            modelo.classificacao === 'EXCELENTE' ? 'success' :
-                            modelo.classificacao === 'BOA' ? 'primary' :
-                            modelo.classificacao === 'MODERADA' ? 'warning' : 'danger'
-                          } className="text-[10px] px-1.5 py-0">
-                            {modelo.classificacao}
-                          </Badge>
-                          <span>•</span>
-                          <span>{((modelo.pontuacao || 0) * 100).toFixed(1)}%</span>
+                      <div 
+                        className="flex items-center gap-3 flex-1 cursor-pointer"
+                        onClick={() => abrirRelatorioDetalhado(modelo)}
+                      >
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CORES_MODELOS[extrairTipoModelo(modelo)] || '#888' }} />
+                        <div>
+                          <p className="font-medium text-gray-800">{extrairNomeModelo(modelo)}</p>
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>{formatarDataSegura(timestamp)}</span>
+                            <span>•</span>
+                            <Badge variant={
+                              classificacao === 'EXCELENTE' ? 'success' :
+                              classificacao === 'BOA' ? 'primary' :
+                              classificacao === 'MODERADA' ? 'warning' : 'danger'
+                            } className="text-[10px] px-1.5 py-0">
+                              {classificacao}
+                            </Badge>
+                            <span>•</span>
+                            <span>{mape}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex gap-1">
-                      {filtroStatus !== 'arquivados' && (
+                      
+                      <div className="flex gap-1">
+                        {filtroStatus !== 'arquivados' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); arquivarModelo(modelo.id); }}
+                            className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
+                            title="Arquivar modelo"
+                          >
+                            <Archive className="w-4 h-4" />
+                          </button>
+                        )}
+                        {filtroStatus === 'arquivados' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); restaurarModelo(modelo.id); }}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
+                            title="Restaurar modelo"
+                          >
+                            <ArchiveRestore className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
-                          onClick={(e) => { e.stopPropagation(); arquivarModelo(modelo.id); }}
-                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
-                          title="Arquivar modelo"
+                          onClick={(e) => { e.stopPropagation(); setModeloParaEliminar(modelo); setMostrarConfirmacaoExclusao(true); }}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Eliminar permanentemente"
                         >
-                          <Archive className="w-4 h-4" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      )}
-                      {filtroStatus === 'arquivados' && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); restaurarModelo(modelo.id); }}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
-                          title="Restaurar modelo"
-                        >
-                          <ArchiveRestore className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setModeloParaEliminar(modelo); setMostrarConfirmacaoExclusao(true); }}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                        title="Eliminar permanentemente"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </motion.div>
           )}
@@ -2236,10 +2331,10 @@ const abrirRelatorioDetalhado = async (modelo) => {
                 </div>
                 <div className="flex-1">
                   <h4 className="text-lg font-bold text-green-800 mb-1">🏆 Melhor Modelo</h4>
-                  <p className="text-xl font-bold text-gray-800">{estatisticas.melhorModelo.nome}</p>
+                  <p className="text-xl font-bold text-gray-800">{extrairNomeModelo(estatisticas.melhorModelo)}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <Badge variant="success">{estatisticas.melhorModelo.tipo}</Badge>
-                    <Badge variant="success">{((estatisticas.melhorModelo.pontuacao || 0) * 100).toFixed(1)}%</Badge>
+                    <Badge variant="success">{extrairTipoModelo(estatisticas.melhorModelo)}</Badge>
+                    <Badge variant="success">{extrairMAPE(estatisticas.melhorModelo)}</Badge>
                   </div>
                 </div>
               </div>
@@ -2256,10 +2351,10 @@ const abrirRelatorioDetalhado = async (modelo) => {
                 </div>
                 <div className="flex-1">
                   <h4 className="text-lg font-bold text-red-800 mb-1">⚠️ Precisa de Atenção</h4>
-                  <p className="text-xl font-bold text-gray-800">{estatisticas.piorModelo.nome}</p>
+                  <p className="text-xl font-bold text-gray-800">{extrairNomeModelo(estatisticas.piorModelo)}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <Badge variant="danger">{estatisticas.piorModelo.tipo}</Badge>
-                    <Badge variant="danger">{((estatisticas.piorModelo.pontuacao || 0) * 100).toFixed(1)}%</Badge>
+                    <Badge variant="danger">{extrairTipoModelo(estatisticas.piorModelo)}</Badge>
+                    <Badge variant="danger">{extrairMAPE(estatisticas.piorModelo)}</Badge>
                   </div>
                 </div>
               </div>
@@ -2450,119 +2545,129 @@ const abrirRelatorioDetalhado = async (modelo) => {
           modelosFiltrados.map(pasta => renderPasta(pasta))
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {modelosFiltrados.map((modelo) => (
-              <motion.div
-                key={modelo.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`bg-white rounded-2xl shadow-xl border ${
-                  modelo.dataArquivamento ? 'border-gray-300 bg-gray-50' : 'border-gray-100'
-                } overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1`}
-              >
-                <div className="p-6">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div 
-                          className="w-3 h-3 rounded-full shadow-lg"
-                          style={{ backgroundColor: CORES_MODELOS[modelo.tipo] || '#888' }}
-                        />
-                        <span className="text-xs font-medium text-gray-500">{modelo.tipo}</span>
-                        {modelo.dataArquivamento && (
-                          <Badge variant="outline" className="ml-2">
-                            <Archive className="w-3 h-3 mr-1" />
-                            Arquivado
-                          </Badge>
-                        )}
+            {modelosFiltrados.map((modelo) => {
+              const nome = extrairNomeModelo(modelo);
+              const tipo = extrairTipoModelo(modelo);
+              const classificacao = extrairClassificacao(modelo);
+              const pontuacao = extrairPontuacao(modelo);
+              const mape = extrairMAPE(modelo);
+              const timestamp = extrairTimestamp(modelo);
+              const dataArquivamento = modelo.dataArquivamento;
+              
+              return (
+                <motion.div
+                  key={modelo.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`bg-white rounded-2xl shadow-xl border ${
+                    dataArquivamento ? 'border-gray-300 bg-gray-50' : 'border-gray-100'
+                  } overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1`}
+                >
+                  <div className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div 
+                            className="w-3 h-3 rounded-full shadow-lg"
+                            style={{ backgroundColor: CORES_MODELOS[tipo] || '#888' }}
+                          />
+                          <span className="text-xs font-medium text-gray-500">{tipo}</span>
+                          {dataArquivamento && (
+                            <Badge variant="outline" className="ml-2">
+                              <Archive className="w-3 h-3 mr-1" />
+                              Arquivado
+                            </Badge>
+                          )}
+                        </div>
+                        <h3 className="text-xl font-bold text-[#0A1F44]">{nome}</h3>
                       </div>
-                      <h3 className="text-xl font-bold text-[#0A1F44]">{modelo.nome}</h3>
+                      
+                      <div className="flex gap-1">
+                        {!dataArquivamento && (
+                          <button
+                            onClick={() => arquivarModelo(modelo.id)}
+                            className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
+                            title="Arquivar"
+                          >
+                            <Archive className="w-5 h-5" />
+                          </button>
+                        )}
+                        {dataArquivamento && (
+                          <button
+                            onClick={() => restaurarModelo(modelo.id)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
+                            title="Restaurar"
+                          >
+                            <ArchiveRestore className="w-5 h-5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setModeloParaEliminar(modelo); setMostrarConfirmacaoExclusao(true); }}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                     
-                    <div className="flex gap-1">
-                      {!modelo.dataArquivamento && (
-                        <button
-                          onClick={() => arquivarModelo(modelo.id)}
-                          className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition"
-                          title="Arquivar"
-                        >
-                          <Archive className="w-5 h-5" />
-                        </button>
+                    <div className="mb-4">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-600">Performance</span>
+                        <span className="font-bold" style={{ color: CORES_CLASSIFICACAO[classificacao] }}>
+                          {mape}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="h-2 rounded-full transition-all duration-1000"
+                          style={{ 
+                            width: `${pontuacao * 100}%`,
+                            backgroundColor: CORES_CLASSIFICACAO[classificacao]
+                          }}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4 flex items-center gap-2">
+                      <Badge variant={
+                        classificacao === 'EXCELENTE' ? 'success' :
+                        classificacao === 'BOA' ? 'primary' :
+                        classificacao === 'MODERADA' ? 'warning' : 'danger'
+                      }>
+                        {classificacao}
+                      </Badge>
+                      {modelo.nivelConfianca && (
+                        <Badge variant={
+                          modelo.nivelConfianca === 'excelente' ? 'success' :
+                          modelo.nivelConfianca === 'bom' ? 'primary' :
+                          modelo.nivelConfianca === 'moderado' ? 'warning' : 'danger'
+                        }>
+                          Confiança: {modelo.nivelConfianca}
+                        </Badge>
                       )}
-                      {modelo.dataArquivamento && (
-                        <button
-                          onClick={() => restaurarModelo(modelo.id)}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
-                          title="Restaurar"
-                        >
-                          <ArchiveRestore className="w-5 h-5" />
-                        </button>
-                      )}
+                    </div>
+                    
+                    <div className="flex gap-3">
                       <button
-                        onClick={() => { setModeloParaEliminar(modelo); setMostrarConfirmacaoExclusao(true); }}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                        title="Eliminar"
+                        onClick={() => abrirRelatorioDetalhado(modelo)}
+                        className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 px-4 rounded-xl transition font-medium flex items-center justify-center gap-2 shadow-md"
                       >
-                        <Trash2 className="w-5 h-5" />
+                        <Eye className="w-4 h-4" />
+                        Ver Análise
                       </button>
                     </div>
-                  </div>
-                  
-                  <div className="mb-4">
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">Performance</span>
-                      <span className="font-bold" style={{ color: CORES_CLASSIFICACAO[modelo.classificacao] }}>
-  {extrairMAPE(modelo)}
-</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="h-2 rounded-full transition-all duration-1000"
-                        style={{ 
-                          width: `${(modelo.pontuacao || 0) * 100}%`,
-                          backgroundColor: CORES_CLASSIFICACAO[modelo.classificacao]
-                        }}
-                      />
+                    
+                    <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
+                      <span className="flex items-center gap-1">
+                        <ClockIcon className="w-3 h-3" />
+                        {formatarDataSegura(timestamp)}
+                      </span>
                     </div>
                   </div>
-                  
-                  <div className="mb-4 flex items-center gap-2">
-                    <Badge variant={
-                      modelo.classificacao === 'EXCELENTE' ? 'success' :
-                      modelo.classificacao === 'BOA' ? 'primary' :
-                      modelo.classificacao === 'MODERADA' ? 'warning' : 'danger'
-                    }>
-                      {modelo.classificacao}
-                    </Badge>
-                    {modelo.nivelConfianca && (
-                      <Badge variant={
-                        modelo.nivelConfianca === 'excelente' ? 'success' :
-                        modelo.nivelConfianca === 'bom' ? 'primary' :
-                        modelo.nivelConfianca === 'moderado' ? 'warning' : 'danger'
-                      }>
-                        Confiança: {modelo.nivelConfianca}
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => abrirRelatorioDetalhado(modelo)}
-                      className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 px-4 rounded-xl transition font-medium flex items-center justify-center gap-2 shadow-md"
-                    >
-                      <Eye className="w-4 h-4" />
-                      Ver Análise
-                    </button>
-                  </div>
-                  
-                  <div className="mt-4 flex items-center justify-between text-xs text-gray-400">
-                    <span className="flex items-center gap-1">
-  <ClockIcon className="w-3 h-3" />
-  {formatarDataSegura(modelo.timestamp)}
-</span>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -2633,7 +2738,7 @@ const abrirRelatorioDetalhado = async (modelo) => {
               </div>
               <h3 className="text-2xl font-bold text-gray-800 mb-2">Confirmar Exclusão</h3>
               <p className="text-gray-600">
-                Tem certeza que deseja eliminar o modelo <span className="font-bold">{modeloParaEliminar.nome}</span>?
+                Tem certeza que deseja eliminar o modelo <span className="font-bold">{extrairNomeModelo(modeloParaEliminar)}</span>?
               </p>
               <p className="text-sm text-gray-500 mt-2">Esta ação não pode ser desfeita.</p>
             </div>
@@ -2778,4 +2883,4 @@ const abrirRelatorioDetalhado = async (modelo) => {
       />
     </div>
   );
-}
+}0.

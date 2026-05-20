@@ -1,4 +1,5 @@
-﻿// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\services\modelosService.js
+﻿// frontend/src/services/modelosService.js (VERSÃO CORRIGIDA)
+
 import api from './api';
 
 const ModelosService = {
@@ -93,8 +94,11 @@ const ModelosService = {
       const performance = this.calcularPerformance(modelo);
       const pontuacao = isNaN(performance.pontuacao) ? 0.5 : performance.pontuacao;
       
+      // 🔥 GARANTIR QUE O ID EXISTA
+      const modeloId = modelo.id || `modelo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
       const modeloParaSalvar = {
-        id: modelo.id || null,
+        id: modeloId,
         nome: modelo.nome || 'Modelo sem nome',
         tipo: modelo.tipo || 'desconhecido',
         timestamp: modelo.timestamp || new Date().toISOString(),
@@ -102,11 +106,13 @@ const ModelosService = {
         parametros: modelo.parametros || {},
         pontuacao: pontuacao,
         classificacao: performance.classificacao,
-        // 🔥 Incluir dados adicionais importantes
         qualidade: modelo.qualidade || modelo.resultado?.qualidade || {},
-        coeficientes: modelo.coeficientes || modelo.resultado?.coeficientes || []
+        coeficientes: modelo.coeficientes || modelo.resultado?.coeficientes || [],
+        arquivado: false,
+        dataArquivamento: null
       };
       
+      // 🔥 USAR O AXIOS DO API.JS CORRETAMENTE
       const response = await api.axios.post('/modelos/salvar', {
         userId: this.getUserId(),
         modelo: modeloParaSalvar
@@ -116,45 +122,72 @@ const ModelosService = {
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao salvar:', error.response?.data || error.message);
+      console.error('📡 URL da requisição:', error.config?.url);
+      console.error('🌐 Base URL:', api.axios.defaults.baseURL);
       return { success: false, error: error.message };
     }
   },
 
-  // 🔥 NOVO: Carregar modelo completo
   async carregar(modeloId) {
     try {
       console.log(`📥 Carregando modelo ${modeloId}...`);
-      const response = await api.axios.get(`/modelos/carregar/${this.getUserId()}/${modeloId}`);
+      const userId = this.getUserId();
+      console.log(`👤 Usuário: ${userId}`);
+      console.log(`🔗 URL: /modelos/carregar/${userId}/${modeloId}`);
+      
+      const response = await api.axios.get(`/modelos/carregar/${userId}/${modeloId}`);
+      console.log('✅ Modelo carregado:', response.data);
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao carregar modelo:', error);
+      console.error('📡 Status:', error.response?.status);
+      console.error('📡 Data:', error.response?.data);
       return { success: false, error: error.message };
     }
   },
 
   async listarAtivos() {
     try {
-      const response = await api.axios.get(`/modelos/listar/${this.getUserId()}?arquivados=false`);
+      const userId = this.getUserId();
+      console.log(`📋 Listando modelos ativos para: ${userId}`);
+      
+      const response = await api.axios.get(`/modelos/listar/${userId}`, {
+        params: { arquivados: false }
+      });
+      
+      console.log(`✅ ${response.data.total || response.data.modelos?.length || 0} modelos ativos`);
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao listar ativos:', error);
-      return { success: false, modelos: [] };
+      console.error('📡 Status:', error.response?.status);
+      return { success: false, modelos: [], total: 0 };
     }
   },
 
   async listarArquivados() {
     try {
-      const response = await api.axios.get(`/modelos/listar/${this.getUserId()}?arquivados=true`);
+      const userId = this.getUserId();
+      console.log(`📋 Listando modelos arquivados para: ${userId}`);
+      
+      const response = await api.axios.get(`/modelos/listar/${userId}`, {
+        params: { arquivados: true }
+      });
+      
+      console.log(`✅ ${response.data.total || response.data.modelos?.length || 0} modelos arquivados`);
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao listar arquivados:', error);
-      return { success: false, modelos: [] };
+      return { success: false, modelos: [], total: 0 };
     }
   },
 
   async estatisticas() {
     try {
-      const response = await api.axios.get(`/modelos/estatisticas/${this.getUserId()}`);
+      const userId = this.getUserId();
+      console.log(`📊 Buscando estatísticas para: ${userId}`);
+      
+      const response = await api.axios.get(`/modelos/estatisticas/${userId}`);
+      console.log('✅ Estatísticas carregadas');
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao buscar estatísticas:', error);
@@ -176,7 +209,11 @@ const ModelosService = {
 
   async eliminar(modeloId) {
     try {
-      const response = await api.axios.delete(`/modelos/eliminar/${this.getUserId()}/${modeloId}`);
+      const userId = this.getUserId();
+      console.log(`🗑️ Eliminando modelo ${modeloId}...`);
+      
+      const response = await api.axios.delete(`/modelos/eliminar/${userId}/${modeloId}`);
+      console.log('✅ Modelo eliminado');
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao eliminar:', error);
@@ -186,9 +223,13 @@ const ModelosService = {
 
   async arquivar(modeloId) {
     try {
-      const response = await api.axios.put(`/modelos/status/${this.getUserId()}/${modeloId}`, {
+      const userId = this.getUserId();
+      console.log(`📦 Arquivando modelo ${modeloId}...`);
+      
+      const response = await api.axios.put(`/modelos/status/${userId}/${modeloId}`, {
         arquivar: true
       });
+      console.log('✅ Modelo arquivado');
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao arquivar:', error);
@@ -198,13 +239,29 @@ const ModelosService = {
 
   async restaurar(modeloId) {
     try {
-      const response = await api.axios.put(`/modelos/status/${this.getUserId()}/${modeloId}`, {
+      const userId = this.getUserId();
+      console.log(`🔄 Restaurando modelo ${modeloId}...`);
+      
+      const response = await api.axios.put(`/modelos/status/${userId}/${modeloId}`, {
         arquivar: false
       });
+      console.log('✅ Modelo restaurado');
       return response.data;
     } catch (error) {
       console.error('❌ Erro ao restaurar:', error);
       return { success: false };
+    }
+  },
+
+  // 🔥 NOVO: Verificar conexão com API de modelos
+  async testarConexao() {
+    try {
+      const userId = this.getUserId();
+      const response = await api.axios.get(`/modelos/listar/${userId}?limit=1`);
+      return { success: true, message: 'API de modelos OK' };
+    } catch (error) {
+      console.error('❌ Teste de conexão falhou:', error);
+      return { success: false, error: error.message };
     }
   }
 };
