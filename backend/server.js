@@ -1,4 +1,4 @@
-// server.js - VERSÃO CORRIGIDA (APENAS ACENTOS ADICIONADOS)
+ // server.js - VERSÃO CORRIGIDA E OTIMIZADA
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -31,46 +31,6 @@ const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// ==================== 🔥 ÚNICA ADIÇÃO: FUNÇÃO PARA CORRIGIR ACENTOS ====================
-const corrigirAcentos = (str) => {
-  if (typeof str !== 'string') return str;
-  return str
-    .replace(/<c3><a1>/g, 'á')
-    .replace(/<c3><a9>/g, 'é')
-    .replace(/<c3><ad>/g, 'í')
-    .replace(/<c3><b3>/g, 'ó')
-    .replace(/<c3><ba>/g, 'ú')
-    .replace(/<c3><a2>/g, 'â')
-    .replace(/<c3><aa>/g, 'ê')
-    .replace(/<c3><b4>/g, 'ô')
-    .replace(/<c3><a3>/g, 'ã')
-    .replace(/<c3><b5>/g, 'õ')
-    .replace(/<c3><a7>/g, 'ç')
-    .replace(/<c3><81>/g, 'Á')
-    .replace(/<c3><89>/g, 'É')
-    .replace(/<c3><8d>/g, 'Í')
-    .replace(/<c3><93>/g, 'Ó')
-    .replace(/<c3><9a>/g, 'Ú')
-    .replace(/<c3><82>/g, 'Â')
-    .replace(/<c3><8a>/g, 'Ê')
-    .replace(/<c3><94>/g, 'Ô')
-    .replace(/<c3><83>/g, 'Ã')
-    .replace(/<c3><95>/g, 'Õ')
-    .replace(/<c3><87>/g, 'Ç');
-};
-
-const corrigirObjeto = (obj) => {
-  if (typeof obj === 'string') return corrigirAcentos(obj);
-  if (Array.isArray(obj)) return obj.map(corrigirObjeto);
-  if (obj && typeof obj === 'object') {
-    const novo = {};
-    for (const [k, v] of Object.entries(obj)) novo[k] = corrigirObjeto(v);
-    return novo;
-  }
-  return obj;
-};
-// =======================================================================
 
 // 🔥 CONFIGURAÇÃO CORS - DEVE VIR ANTES DE TUDO!
 const corsOptions = {
@@ -122,16 +82,14 @@ app.use("/api", limiter);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// 🔥 MIDDLEWARE CORRIGIDO: GARANTIR UTF-8 E CORRIGIR ACENTOS
+// 🔥 GARANTIR QUE TODAS AS RESPOSTAS JSON TENHAM CHARSET UTF-8
 app.use((req, res, next) => {
   const originalJson = res.json;
   res.json = function(data) {
     // Define o header com charset UTF-8
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    // 🔥 CORRIGIR ACENTOS ANTES DE ENVIAR
-    const dataCorrigida = corrigirObjeto(data);
-    // Chama o método original com os dados corrigidos
-    return originalJson.call(this, dataCorrigida);
+    // Chama o método original
+    return originalJson.call(this, data);
   };
   next();
 });
