@@ -1,4 +1,4 @@
-﻿// frontend/src/components/Dashboard/resultados/ResultadoProphet.jsx - VERSÃO COMPLETA CORRIGIDA
+﻿// frontend/src/components/Dashboard/resultados/ResultadoProphet.jsx
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
@@ -7,11 +7,15 @@ import {
   Activity, BarChart2, Calendar, Target,
   AlertTriangle, CheckCircle, Info, Eye, FileText, Printer
 } from 'lucide-react';
-import Card, { CardHeader, CardTitle, CardContent } from '../componentes/Card';
+import Card, { CardHeader, CardTitle, CardContent, CardDescription } from '../componentes/Card';
 import {
   formatarDataCompleta,
   formatarDataGrafico,
-  obterTimestamp
+  obterTimestamp,
+  corrigirSeculoData,
+  isAnoIsolado,
+  isExcelSerial,
+  converterExcelSerialParaData
 } from '../../../utils/dateUtils';
 import Button from '../componentes/Button';
 import Badge from '../componentes/Badge';
@@ -49,14 +53,15 @@ ChartJS.register(
 
 // ==================== COMPONENTE DE GRÁFICOS ====================
 
-const GraficosProphet = ({ dados, tipoModelo }) => {
+const GraficosProphet = ({ dados, dadosOriginaisExtras, tipoModelo }) => {
   const [graficoAtivo, setGraficoAtivo] = useState('previsoes');
   const [dadosProcessados, setDadosProcessados] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const chartRef = useRef(null);
 
   useEffect(() => {
-    console.log('📊 GraficosProphet recebeu dados:', dados);
+    console.log('📊 GraficosProphet - Dados recebidos:', dados);
+    console.log('📊 GraficosProphet - dadosOriginaisExtras:', dadosOriginaisExtras);
     
     if (!dados) {
       setDadosProcessados(null);
@@ -67,59 +72,95 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
     try {
       const { 
         previsoes = [], 
-        ajustados = [], 
-        residuos = [], 
         metricas = {},
         interpretacao_tecnica = {},
         dados_originais = {},
         periodo_previsao = {}
       } = dados;
       
-      console.log('📊 Dados brutos recebidos:', {
-        previsoes: previsoes?.length,
-        ajustados: ajustados?.length,
-        residuos: residuos?.length,
-        metricas
-      });
-
-      // Processar dados ajustados
-      const dadosAjustados = (ajustados || []).map((item, idx) => ({
-        data: item.data || item.ds || idx,
-        valor: parseFloat(item.valor || item.yhat || 0) || 0,
-        tipo: 'ajustado'
-      }));
-
-      // Processar previsões
-      const dadosPrevisoes = (previsoes || []).map((item, idx) => ({
-        data: item.data || item.ds || idx,
-        previsao: parseFloat(item.previsao || item.yhat || 0) || 0,
-        inferior: parseFloat(item.inferior || item.yhat_lower || 0) || 0,
-        superior: parseFloat(item.superior || item.yhat_upper || 0) || 0,
-        tipo: 'previsao'
-      }));
-
-      // Processar dados históricos
+      // 🔥 PROCESSAR DADOS HISTÓRICOS - PRIORIDADES:
+      // 1. dados_originais.dados (formato com objetos)
+      // 2. dados_originais.historico (array simples)
+      // 3. dadosOriginaisExtras (props do componente pai)
+      // 4. resultado.historico (direto)
+      
       let dadosHistoricos = [];
-      if (dados_originais?.dados && Array.isArray(dados_originais.dados)) {
-        dadosHistoricos = dados_originais.dados.map((item, idx) => ({
-          data: item.data || item.ds || idx,
-          valor: parseFloat(item.valor || item.y || 0) || 0,
+      
+      // Tentativa 1: dados_originais.dados
+      if (dados_originais?.dados && Array.isArray(dados_originais.dados) && dados_originais.dados.length > 0) {
+        dadosHistoricos = dados_originais.dados.map(item => ({
+          data: item.data || item.ds || item.periodo,
+          valor: parseFloat(item.valor || item.y || 0),
           tipo: 'historico'
         }));
-      } else if (dados_originais?.historico && Array.isArray(dados_originais.historico)) {
-        dadosHistoricos = dados_originais.historico.map((valor, idx) => ({
-          data: dados_originais.datas?.[idx] || idx,
+        console.log('📊 Histórico carregado de dados_originais.dados:', dadosHistoricos.length);
+      }
+      
+      // Tentativa 2: dados_originais.historico
+      if (dadosHistoricos.length === 0 && dados_originais?.historico && Array.isArray(dados_originais.historico) && dados_originais.historico.length > 0) {
+        const valores = dados_originais.historico;
+        const datas = dados_originais.datas || valores.map((_, i) => i);
+        dadosHistoricos = valores.map((valor, idx) => ({
+          data: datas[idx],
           valor: parseFloat(valor) || 0,
           tipo: 'historico'
         }));
+        console.log('📊 Histórico carregado de dados_originais.historico:', dadosHistoricos.length);
       }
-
-      // Processar resíduos
-      const residuosProcessados = (residuos || []).map((r, i) => ({
-        periodo: i + 1,
-        residuo: parseFloat(r) || 0
+      
+      // Tentativa 3: dadosOriginaisExtras (prop do componente pai)
+      if (dadosHistoricos.length === 0 && dadosOriginaisExtras && Array.isArray(dadosOriginaisExtras) && dadosOriginaisExtras.length > 0) {
+        // Verificar se é array de números
+        if (typeof dadosOriginaisExtras[0] === 'number') {
+          dadosHistoricos = dadosOriginaisExtras.map((valor, idx) => ({
+            data: idx,
+            valor: valor,
+            tipo: 'historico'
+          }));
+        } 
+        // Verificar se é array de objetos
+        else if (typeof dadosOriginaisExtras[0] === 'object') {
+          dadosHistoricos = dadosOriginaisExtras.map(item => ({
+            data: item.data || item.ds || item.Data,
+            valor: parseFloat(item.valor || item.y || item.Inflacao_Turquia || 0),
+            tipo: 'historico'
+          }));
+        }
+        console.log('📊 Histórico carregado de dadosOriginaisExtras:', dadosHistoricos.length);
+      }
+      
+      // Tentativa 4: resultado.historico direto
+      if (dadosHistoricos.length === 0 && dados.historico && Array.isArray(dados.historico) && dados.historico.length > 0) {
+        dadosHistoricos = dados.historico.map(item => ({
+          data: item.data || item.ds,
+          valor: parseFloat(item.valor || item.y || 0),
+          tipo: 'historico'
+        }));
+        console.log('📊 Histórico carregado de dados.historico:', dadosHistoricos.length);
+      }
+      
+      // Tentativa 5: extrair de interpretacao_tecnica
+      if (dadosHistoricos.length === 0 && interpretacao_tecnica?.dados_historicos) {
+        dadosHistoricos = interpretacao_tecnica.dados_historicos;
+        console.log('📊 Histórico carregado de interpretacao_tecnica:', dadosHistoricos.length);
+      }
+      
+      // Processar previsões
+      const dadosPrevisoes = previsoes.map((item, idx) => ({
+        data: item.data || item.ds || idx,
+        previsao: parseFloat(item.previsao || item.yhat || 0),
+        inferior: parseFloat(item.inferior || item.yhat_lower || 0),
+        superior: parseFloat(item.superior || item.yhat_upper || 0),
+        tipo: 'previsao'
       }));
-
+      
+      // Processar dados ajustados (se disponíveis)
+      const dadosAjustados = (dados.ajustados || []).map((item, idx) => ({
+        data: item.data || item.ds || idx,
+        valor: parseFloat(item.valor || item.yhat || 0),
+        tipo: 'ajustado'
+      }));
+      
       const metricasProcessadas = {
         mse: metricas.mse,
         rmse: metricas.rmse,
@@ -127,29 +168,23 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
         mape: metricas.mape,
         r2: metricas.r2
       };
-
-      let componentes = {};
-      if (dados.componentes) {
-        componentes = {
-          tendencia: dados.componentes.tendencia || [],
-          sazonalidade: dados.componentes.sazonalidade || [],
-          feriados: dados.componentes.feriados || []
-        };
-      }
-
+      
       const processado = {
         dadosHistoricos,
         dadosAjustados,
         dadosPrevisoes,
-        residuos: residuosProcessados,
         metricas: metricasProcessadas,
-        componentes,
         interpretacao: interpretacao_tecnica,
         periodoPrevisao: periodo_previsao,
         nomeSerie: interpretacao_tecnica?.variavel || dados.nome || 'Prophet'
       };
-
-      console.log('📊 Dados processados:', processado);
+      
+      console.log('📊 Dados processados finais:', {
+        historicos: dadosHistoricos.length,
+        previsoes: dadosPrevisoes.length,
+        ajustados: dadosAjustados.length
+      });
+      
       setDadosProcessados(processado);
     } catch (error) {
       console.error('❌ Erro ao processar dados para gráficos:', error);
@@ -157,7 +192,7 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
     } finally {
       setCarregando(false);
     }
-  }, [dados]);
+  }, [dados, dadosOriginaisExtras]);
 
   const ordenarPorData = (array) => {
     if (!array || !Array.isArray(array)) return [];
@@ -169,76 +204,139 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
   };
 
   const dadosPrevisoesHistorico = () => {
-    if (!dadosProcessados || (!dadosProcessados.dadosHistoricos?.length && !dadosProcessados.dadosPrevisoes?.length)) return null;
-
+    if (!dadosProcessados) return null;
+    
     const { dadosHistoricos, dadosPrevisoes, dadosAjustados, nomeSerie } = dadosProcessados;
-
+    
+    // Se não tem dados históricos nem previsões, retorna null
+    if ((!dadosHistoricos || dadosHistoricos.length === 0) && (!dadosPrevisoes || dadosPrevisoes.length === 0)) {
+      return null;
+    }
+    
+    // Reunir todas as datas para o eixo X
     const todasDatas = new Set();
-    dadosHistoricos.forEach(item => todasDatas.add(item.data));
-    dadosAjustados.forEach(item => todasDatas.add(item.data));
-    dadosPrevisoes.forEach(item => todasDatas.add(item.data));
-
+    
+    if (dadosHistoricos && dadosHistoricos.length > 0) {
+      dadosHistoricos.forEach(item => {
+        if (item && item.data !== undefined && item.data !== null) todasDatas.add(item.data);
+      });
+    }
+    
+    if (dadosPrevisoes && dadosPrevisoes.length > 0) {
+      dadosPrevisoes.forEach(item => {
+        if (item && item.data !== undefined && item.data !== null) todasDatas.add(item.data);
+      });
+    }
+    
+    if (dadosAjustados && dadosAjustados.length > 0) {
+      dadosAjustados.forEach(item => {
+        if (item && item.data !== undefined && item.data !== null) todasDatas.add(item.data);
+      });
+    }
+    
+    // Ordenar datas
     const datasOrdenadas = Array.from(todasDatas).sort((a, b) => obterTimestamp(a) - obterTimestamp(b));
     const labels = datasOrdenadas.map(d => formatarDataGrafico(d));
-
-    const historicoMap = new Map(dadosHistoricos.map(d => [d.data, d.valor]));
-    const ajustadosMap = new Map(dadosAjustados.map(d => [d.data, d.valor]));
-    const previsoesMap = new Map(dadosPrevisoes.map(d => [d.data, d.previsao]));
-    const inferiorMap = new Map(dadosPrevisoes.map(d => [d.data, d.inferior]));
-    const superiorMap = new Map(dadosPrevisoes.map(d => [d.data, d.superior]));
-
+    
+    // Criar maps para acesso rápido
+    const historicoMap = new Map();
+    if (dadosHistoricos) {
+      dadosHistoricos.forEach(d => {
+        if (d && d.data !== undefined) historicoMap.set(d.data, d.valor);
+      });
+    }
+    
+    const ajustadosMap = new Map();
+    if (dadosAjustados) {
+      dadosAjustados.forEach(d => {
+        if (d && d.data !== undefined) ajustadosMap.set(d.data, d.valor);
+      });
+    }
+    
+    const previsoesMap = new Map();
+    const inferiorMap = new Map();
+    const superiorMap = new Map();
+    
+    if (dadosPrevisoes) {
+      dadosPrevisoes.forEach(d => {
+        if (d && d.data !== undefined) {
+          previsoesMap.set(d.data, d.previsao);
+          if (d.inferior !== undefined) inferiorMap.set(d.data, d.inferior);
+          if (d.superior !== undefined) superiorMap.set(d.data, d.superior);
+        }
+      });
+    }
+    
+    // Construir datasets
     const datasets = [];
-
-    if (dadosHistoricos.length) {
+    
+    // Dataset 1: DADOS HISTÓRICOS
+    if (dadosHistoricos && dadosHistoricos.length > 0) {
       datasets.push({
         label: 'Dados Históricos',
-        data: datasOrdenadas.map(d => historicoMap.get(d) ?? null),
-        borderColor: 'rgb(59, 130, 246)',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-        borderWidth: 2,
+        data: datasOrdenadas.map(d => {
+          const val = historicoMap.get(d);
+          return val !== undefined ? val : null;
+        }),
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+        borderWidth: 2.5,
         fill: false,
-        tension: 0.1,
+        tension: 0.2,
         pointRadius: 3,
         pointHoverRadius: 6,
+        pointBackgroundColor: '#2563eb',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
         order: 1
       });
     }
-
-    if (dadosAjustados.length) {
+    
+    // Dataset 2: AJUSTE DO MODELO (opcional)
+    if (dadosAjustados && dadosAjustados.length > 0) {
       datasets.push({
-        label: 'Modelo Ajustado',
+        label: 'Ajuste do Modelo',
         data: datasOrdenadas.map(d => ajustadosMap.get(d) ?? null),
-        borderColor: 'rgb(245, 158, 11)',
-        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-        borderWidth: 2,
-        borderDash: [3, 3],
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245, 158, 11, 0.05)',
+        borderWidth: 1.5,
+        borderDash: [4, 4],
         fill: false,
-        tension: 0.1,
-        pointRadius: 2,
+        tension: 0.2,
+        pointRadius: 1,
+        pointHoverRadius: 4,
         order: 2
       });
     }
-
-    if (dadosPrevisoes.length) {
+    
+    // Dataset 3: PREVISÕES
+    if (dadosPrevisoes && dadosPrevisoes.length > 0) {
       datasets.push({
-        label: 'Previsões Futuras',
+        label: 'Previsões',
         data: datasOrdenadas.map(d => previsoesMap.get(d) ?? null),
-        borderColor: 'rgb(239, 68, 68)',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-        borderWidth: 3,
+        borderColor: '#16a34a',
+        backgroundColor: 'rgba(22, 163, 74, 0.1)',
+        borderWidth: 2.5,
+        borderDash: [6, 6],
         fill: false,
         tension: 0.2,
         pointRadius: 4,
-        pointHoverRadius: 8,
+        pointHoverRadius: 7,
+        pointBackgroundColor: '#16a34a',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
         order: 3
       });
-
-      const temIntervalos = dadosPrevisoes.some(p => p.inferior !== null && p.superior !== null);
+      
+      // INTERVALO DE CONFIANÇA
+      const temIntervalos = dadosPrevisoes.some(p => p.inferior !== undefined && p.superior !== undefined);
+      
       if (temIntervalos) {
+        // Limite Superior
         datasets.push({
-          label: 'Limite Superior (95%)',
+          label: 'Limite Superior (95% CI)',
           data: datasOrdenadas.map(d => superiorMap.get(d) ?? null),
-          borderColor: 'rgba(239, 68, 68, 0.5)',
+          borderColor: 'rgba(22, 163, 74, 0.3)',
           backgroundColor: 'rgba(0,0,0,0)',
           borderWidth: 1,
           borderDash: [2, 2],
@@ -247,226 +345,145 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
           pointRadius: 0,
           order: 4
         });
-
+        
+        // Limite Inferior com área preenchida
         datasets.push({
-          label: 'Limite Inferior (95%)',
+          label: 'Intervalo de Confiança (95%)',
           data: datasOrdenadas.map(d => inferiorMap.get(d) ?? null),
-          borderColor: 'rgba(239, 68, 68, 0.5)',
-          backgroundColor: 'rgba(239, 68, 68, 0.2)',
+          borderColor: 'rgba(22, 163, 74, 0.3)',
+          backgroundColor: 'rgba(22, 163, 74, 0.15)',
           borderWidth: 1,
           borderDash: [2, 2],
-          fill: { target: '+1', above: 'rgba(239, 68, 68, 0.2)' },
+          fill: { target: '+1', above: 'rgba(22, 163, 74, 0.15)' },
           tension: 0,
           pointRadius: 0,
           order: 5
         });
       }
     }
-
+    
+    const formatNumber = (num, decimals = 2) => {
+      if (num == null || isNaN(num)) return 'N/A';
+      if (typeof num !== 'number') num = parseFloat(num);
+      return num.toFixed(decimals);
+    };
+    
+    // Calcular crescimento
+    let growthText = '';
+    let growthClass = '';
+    
+    if (dadosPrevisoes && dadosPrevisoes.length > 0 && dadosHistoricos && dadosHistoricos.length > 0) {
+      const ultimoHistorico = dadosHistoricos[dadosHistoricos.length - 1]?.valor;
+      const primeiraPrevisao = dadosPrevisoes[0]?.previsao;
+      
+      if (ultimoHistorico && primeiraPrevisao && ultimoHistorico !== 0) {
+        const growth = ((primeiraPrevisao - ultimoHistorico) / ultimoHistorico) * 100;
+        growthText = `Crescimento: ${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%`;
+        growthClass = growth >= 0 ? 'text-green-600' : 'text-red-600';
+      }
+    }
+    
     return {
       type: 'line',
       data: { labels, datasets },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
           title: {
             display: true,
-            text: `📈 ${nomeSerie} - Previsões Prophet`,
-            font: { size: 16, weight: 'bold' }
+            text: `📈 ${nomeSerie} - ${growthText}`,
+            font: { size: 16, weight: 'bold' },
+            color: '#1f2937',
+            padding: { top: 10, bottom: 20 }
           },
-          legend: { position: 'top', labels: { usePointStyle: true } },
+          legend: {
+            position: 'top',
+            labels: {
+              usePointStyle: true,
+              padding: 15,
+              font: { size: 11, weight: '500' },
+              boxWidth: 12,
+              generateLabels: (chart) => {
+                const original = ChartJS.defaults.plugins.legend.labels.generateLabels(chart);
+                return original.filter(label => 
+                  !label.text.includes('Limite Superior') && 
+                  !label.text.includes('Limite Inferior')
+                );
+              }
+            }
+          },
           tooltip: {
             mode: 'index',
             intersect: false,
+            backgroundColor: 'rgba(17, 24, 39, 0.95)',
+            titleColor: '#f9fafb',
+            bodyColor: '#e5e7eb',
+            borderColor: '#374151',
+            borderWidth: 1,
+            padding: 12,
+            cornerRadius: 8,
             callbacks: {
-              title: (items) => items[0]?.label || 'Período',
-              label: (ctx) => {
-                const label = ctx.dataset.label;
-                const value = ctx.parsed.y;
-                if (label.includes('Limite')) return `${label}: ${value.toFixed(4)}`;
-                return `${label}: ${value.toFixed(4)}`;
-              },
-              afterBody: (items) => {
-                const idx = items[0]?.dataIndex;
-                if (idx === undefined) return [];
-                const data = datasOrdenadas[idx];
-                const prev = dadosPrevisoes.find(p => p.data === data);
-                if (prev && prev.inferior && prev.superior) {
-                  return [
-                    `Intervalo: ${prev.inferior.toFixed(4)} - ${prev.superior.toFixed(4)}`,
-                    `Amplitude: ${(prev.superior - prev.inferior).toFixed(4)}`
-                  ];
+              label: (context) => {
+                const label = context.dataset.label;
+                const value = context.parsed.y;
+                if (value === null || value === undefined) return null;
+                
+                if (label === 'Intervalo de Confiança (95%)') {
+                  const idx = context.dataIndex;
+                  const dataPoint = datasOrdenadas[idx];
+                  const inferior = inferiorMap.get(dataPoint);
+                  const superior = superiorMap.get(dataPoint);
+                  if (inferior && superior) {
+                    return [
+                      `Intervalo: ${formatNumber(inferior)} - ${formatNumber(superior)}`,
+                      `Amplitude: ${formatNumber(superior - inferior)}`
+                    ];
+                  }
                 }
-                return [];
+                return `${label}: ${formatNumber(value)}`;
               }
             }
           }
         },
         scales: {
-          x: { title: { display: true, text: 'Período' }, ticks: { maxRotation: 45 } },
-          y: { title: { display: true, text: 'Valor' } }
-        },
-        interaction: { intersect: false, mode: 'index' },
-        animation: { duration: 1000, easing: 'easeOutQuart' },
-        spanGaps: true
-      }
-    };
-  };
-
-  const dadosTendenciaDetalhada = () => {
-    if (!dadosProcessados?.dadosHistoricos || dadosProcessados.dadosHistoricos.length < 10) return null;
-
-    const { dadosHistoricos, dadosAjustados } = dadosProcessados;
-    const dadosOrdenados = ordenarPorData(dadosHistoricos);
-    const valores = dadosOrdenados.map(d => d.valor);
-    const labels = dadosOrdenados.map(d => formatarDataGrafico(d.data));
-
-    const mediaMovel = [];
-    for (let i = 0; i < valores.length; i++) {
-      if (i >= 4) {
-        const soma = valores.slice(i-4, i+1).reduce((a, b) => a + b, 0);
-        mediaMovel.push(soma / 5);
-      } else {
-        mediaMovel.push(null);
-      }
-    }
-
-    const n = valores.length;
-    const somaX = valores.reduce((s, _, i) => s + i, 0);
-    const somaY = valores.reduce((s, v) => s + v, 0);
-    const somaXY = valores.reduce((s, v, i) => s + v * i, 0);
-    const somaX2 = valores.reduce((s, _, i) => s + i * i, 0);
-    const b = (n * somaXY - somaX * somaY) / (n * somaX2 - somaX * somaX);
-    const a = (somaY - b * somaX) / n;
-    const linhaTendencia = Array(n).fill(0).map((_, i) => a + b * i);
-
-    const ajustadosOrdenados = ordenarPorData(dadosAjustados);
-    const ajustadosValores = ajustadosOrdenados.map(d => d.valor);
-
-    return {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Valores Históricos',
-            data: valores,
-            borderColor: 'rgb(59, 130, 246)',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.2,
-            pointRadius: 2
+          x: {
+            title: { display: true, text: 'Período', font: { size: 12, weight: '600' } },
+            ticks: { maxRotation: 45, autoSkip: true, maxTicksLimit: 12 },
+            grid: { color: 'rgba(0,0,0,0.05)' }
           },
-          {
-            label: 'Média Móvel (5 períodos)',
-            data: mediaMovel,
-            borderColor: 'rgb(245, 158, 11)',
-            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-            borderWidth: 2,
-            fill: false,
-            tension: 0.2,
-            pointRadius: 0
-          },
-          {
-            label: 'Tendência Linear',
-            data: linhaTendencia,
-            borderColor: 'rgb(239, 68, 68)',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            borderWidth: 2,
-            borderDash: [5, 5],
-            fill: false,
-            tension: 0,
-            pointRadius: 0
-          },
-          {
-            label: 'Ajuste Prophet',
-            data: ajustadosValores,
-            borderColor: 'rgb(16, 185, 129)',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            borderWidth: 2,
-            borderDash: [2, 2],
-            fill: false,
-            tension: 0.3,
-            pointRadius: 1
+          y: {
+            title: { display: true, text: 'Valor', font: { size: 12, weight: '600' } },
+            grid: { color: 'rgba(0,0,0,0.05)' },
+            ticks: {
+              callback: (value) => {
+                if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M';
+                if (value >= 1e3) return (value / 1e3).toFixed(1) + 'k';
+                return value.toLocaleString('pt-BR');
+              }
+            }
           }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: '📊 Análise Detalhada de Tendência', font: { size: 16, weight: 'bold' } },
-          legend: { position: 'top', labels: { usePointStyle: true } },
-          tooltip: { mode: 'index', intersect: false }
         },
-        scales: {
-          x: { title: { display: true, text: 'Período' }, ticks: { maxRotation: 45 } },
-          y: { title: { display: true, text: 'Valor' } }
-        },
-        interaction: { intersect: false, mode: 'index' },
         animation: { duration: 1000, easing: 'easeOutQuart' }
       }
     };
   };
-
-  const dadosComponentes = () => {
-    if (!dadosProcessados?.componentes?.tendencia?.length) return null;
-
-    const { componentes, nomeSerie } = dadosProcessados;
-    const tendencia = componentes.tendencia;
-    const labels = tendencia.map(t => formatarDataGrafico(t.data || t.ds));
-    const valores = tendencia.map(t => parseFloat(t.valor || t.trend) || 0);
-
-    return {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Tendência',
-          data: valores,
-          borderColor: 'rgb(239, 68, 68)',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
-          borderWidth: 3,
-          fill: false,
-          tension: 0.3,
-          pointRadius: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: `📊 ${nomeSerie} - Componentes do Modelo Prophet`, font: { size: 16, weight: 'bold' } },
-          legend: { position: 'top', labels: { usePointStyle: true } },
-          tooltip: { mode: 'index', intersect: false }
-        },
-        scales: {
-          x: { title: { display: true, text: 'Período' }, ticks: { maxRotation: 45 } },
-          y: { title: { display: true, text: 'Valor da Tendência' } }
-        },
-        interaction: { intersect: false, mode: 'index' },
-        animation: { duration: 1000, easing: 'easeOutQuart' }
-      }
-    };
-  };
-
+  
   const dadosMetricas = () => {
     if (!dadosProcessados?.metricas) return null;
-
+    
     const { metricas } = dadosProcessados;
     const metricasArray = [];
-    if (metricas.rmse !== undefined && !isNaN(metricas.rmse)) metricasArray.push({ label: 'RMSE', valor: Math.abs(metricas.rmse) });
-    if (metricas.mae !== undefined && !isNaN(metricas.mae)) metricasArray.push({ label: 'MAE', valor: metricas.mae });
-    if (metricas.mape !== undefined && !isNaN(metricas.mape)) metricasArray.push({ label: 'MAPE', valor: metricas.mape });
-    if (metricas.mse !== undefined && !isNaN(metricas.mse)) metricasArray.push({ label: 'MSE', valor: metricas.mse });
-    if (metricas.r2 !== undefined && !isNaN(metricas.r2)) metricasArray.push({ label: 'R²', valor: metricas.r2 });
+    
+    if (metricas.rmse && !isNaN(metricas.rmse)) metricasArray.push({ label: 'RMSE', valor: metricas.rmse });
+    if (metricas.mae && !isNaN(metricas.mae)) metricasArray.push({ label: 'MAE', valor: metricas.mae });
+    if (metricas.mape && !isNaN(metricas.mape)) metricasArray.push({ label: 'MAPE', valor: metricas.mape });
+    if (metricas.mse && !isNaN(metricas.mse)) metricasArray.push({ label: 'MSE', valor: metricas.mse });
+    if (metricas.r2 && !isNaN(metricas.r2)) metricasArray.push({ label: 'R²', valor: metricas.r2 });
     
     if (metricasArray.length === 0) return null;
-
-    metricasArray.sort((a, b) => b.valor - a.valor);
-
+    
     return {
       type: 'bar',
       data: {
@@ -481,7 +498,6 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
             'rgba(245, 158, 11, 0.8)',
             'rgba(168, 85, 247, 0.8)'
           ],
-          borderWidth: 2,
           borderRadius: 8
         }]
       },
@@ -490,8 +506,7 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
         maintainAspectRatio: false,
         indexAxis: 'y',
         plugins: {
-          title: { display: true, text: '🎯 Métricas de Performance do Prophet', font: { size: 16, weight: 'bold' } },
-          legend: { display: false },
+          title: { display: true, text: '🎯 Métricas de Performance', font: { size: 16, weight: 'bold' } },
           tooltip: {
             callbacks: {
               label: (ctx) => {
@@ -501,195 +516,39 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
               }
             }
           }
-        },
-        scales: {
-          x: { beginAtZero: true, title: { display: true, text: 'Valor da Métrica' } },
-          y: { grid: { color: 'rgba(0,0,0,0.03)' } }
-        },
-        animation: { duration: 800, easing: 'easeOutQuart' }
+        }
       }
     };
   };
-
-  const dadosResiduos = () => {
-    if (!dadosProcessados?.residuos || dadosProcessados.residuos.length === 0) return null;
-
-    const { residuos } = dadosProcessados;
-    const valores = residuos.map(r => r.residuo);
-    const media = valores.reduce((a, b) => a + b, 0) / valores.length;
-    const desvio = Math.sqrt(valores.reduce((s, r) => s + (r - media) ** 2, 0) / valores.length);
-    const limites = valores.map(() => 2 * desvio);
-    const labels = residuos.map(r => `Resíduo ${r.periodo}`);
-
-    return {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Resíduos',
-            data: valores,
-            backgroundColor: valores.map(v => Math.abs(v) > 2 * desvio ? 'rgba(239, 68, 68, 0.7)' : 'rgba(59, 130, 246, 0.7)'),
-            borderColor: valores.map(v => Math.abs(v) > 2 * desvio ? 'rgb(185, 28, 28)' : 'rgb(29, 78, 216)'),
-            borderWidth: 1,
-            borderRadius: 4
-          },
-          {
-            label: 'Limites (±2σ)',
-            data: limites,
-            type: 'line',
-            borderColor: 'rgba(245, 158, 11, 0.5)',
-            borderWidth: 1,
-            borderDash: [3, 3],
-            fill: false,
-            pointRadius: 0
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: '🔍 Análise de Resíduos do Prophet', font: { size: 16, weight: 'bold' } },
-          legend: { position: 'top', labels: { usePointStyle: true } },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                if (ctx.dataset.label === 'Resíduos') {
-                  const out = Math.abs(ctx.parsed.y) > 2 * desvio ? ' ⚠️ Fora dos limites' : '';
-                  return `Resíduo: ${ctx.parsed.y.toFixed(4)}${out}`;
-                }
-                return `Limite: ±${ctx.parsed.y.toFixed(4)}`;
-              }
-            }
-          }
-        },
-        scales: {
-          y: { title: { display: true, text: 'Valor do Resíduo' } },
-          x: { ticks: { display: false } }
-        },
-        animation: { duration: 800, easing: 'easeOutQuart' }
-      }
-    };
-  };
-
-  const dadosComparacaoPrevisoes = () => {
-    if (!dadosProcessados?.dadosPrevisoes || dadosProcessados.dadosPrevisoes.length === 0) return null;
-
-    const { dadosPrevisoes } = dadosProcessados;
-    const dadosOrdenados = ordenarPorData(dadosPrevisoes);
-    const labels = dadosOrdenados.map(item => formatarDataGrafico(item.data));
-    const valores = dadosOrdenados.map(item => item.previsao);
-    const inferiores = dadosOrdenados.map(item => item.inferior);
-    const superiores = dadosOrdenados.map(item => item.superior);
-
-    return {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Previsão Pontual',
-            data: valores,
-            borderColor: 'rgb(16, 185, 129)',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            borderWidth: 3,
-            fill: false,
-            tension: 0.3,
-            pointRadius: 4,
-            pointHoverRadius: 8
-          },
-          {
-            label: 'Limite Inferior (95%)',
-            data: inferiores,
-            borderColor: 'rgba(239, 68, 68, 0.5)',
-            backgroundColor: 'rgba(0,0,0,0)',
-            borderWidth: 1,
-            borderDash: [3, 3],
-            fill: false,
-            tension: 0.3,
-            pointRadius: 2
-          },
-          {
-            label: 'Limite Superior (95%)',
-            data: superiores,
-            borderColor: 'rgba(239, 68, 68, 0.5)',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            borderWidth: 1,
-            borderDash: [3, 3],
-            fill: '+1',
-            tension: 0.3,
-            pointRadius: 2
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          title: { display: true, text: '🔮 Previsões Futuras com Intervalos de Confiança', font: { size: 16, weight: 'bold' } },
-          legend: { position: 'top', labels: { usePointStyle: true } },
-          tooltip: {
-            mode: 'index',
-            intersect: false,
-            callbacks: {
-              label: (ctx) => {
-                const idx = ctx.dataIndex;
-                if (ctx.dataset.label === 'Previsão Pontual') {
-                  return [
-                    `Previsão: ${ctx.parsed.y.toFixed(4)}`,
-                    `Intervalo: ${inferiores[idx].toFixed(4)} a ${superiores[idx].toFixed(4)}`,
-                    `Amplitude: ${(superiores[idx] - inferiores[idx]).toFixed(4)}`
-                  ];
-                }
-                return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`;
-              }
-            }
-          }
-        },
-        scales: {
-          x: { title: { display: true, text: 'Período' } },
-          y: { title: { display: true, text: 'Valor Previsto' } }
-        },
-        interaction: { intersect: false, mode: 'index' },
-        animation: { duration: 1000, easing: 'easeOutQuart' }
-      }
-    };
-  };
-
+  
   const renderizarGrafico = () => {
     if (carregando) {
       return (
         <div className="h-64 flex items-center justify-center">
-          <div className="text-center text-gray-500">
+          <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4" />
-            <p>Carregando gráficos do Prophet...</p>
+            <p className="text-gray-500">Carregando gráficos...</p>
           </div>
         </div>
       );
     }
-
+    
     if (!dadosProcessados) {
       return (
         <div className="h-64 flex items-center justify-center">
           <div className="text-center text-gray-500">
             <div className="text-3xl mb-2">🔮</div>
             <p>Nenhum dado disponível para gráficos</p>
-            <p className="text-sm mt-2">Execute o modelo Prophet primeiro para visualizar os gráficos</p>
           </div>
         </div>
       );
     }
-
+    
     const graficos = {
       previsoes: dadosPrevisoesHistorico(),
-      tendencia: dadosTendenciaDetalhada(),
-      componentes: dadosComponentes(),
-      comparacao: dadosComparacaoPrevisoes(),
-      metricas: dadosMetricas(),
-      residuos: dadosResiduos()
+      metricas: dadosMetricas()
     };
-
+    
     const graficoAtualObj = graficos[graficoAtivo];
     if (!graficoAtualObj) {
       return (
@@ -700,52 +559,27 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
         </div>
       );
     }
-
+    
     if (graficoAtualObj.type === 'line') {
       return <Line ref={chartRef} data={graficoAtualObj.data} options={graficoAtualObj.options} />;
     }
     return <Bar ref={chartRef} data={graficoAtualObj.data} options={graficoAtualObj.options} />;
   };
-
+  
   const graficosDisponiveis = [
     { id: 'previsoes', label: '📈 Previsões', disponivel: !!dadosPrevisoesHistorico() },
-    { id: 'tendencia', label: '📉 Tendência', disponivel: !!dadosTendenciaDetalhada() },
-    { id: 'componentes', label: '🔧 Componentes', disponivel: !!dadosComponentes() },
-    { id: 'comparacao', label: '🎯 Intervalos', disponivel: !!dadosComparacaoPrevisoes() },
-    { id: 'metricas', label: '📊 Métricas', disponivel: !!dadosMetricas() },
-    { id: 'residuos', label: '🔍 Resíduos', disponivel: !!dadosResiduos() }
+    { id: 'metricas', label: '📊 Métricas', disponivel: !!dadosMetricas() }
   ].filter(g => g.disponivel);
-
-  const exportarGrafico = () => {
-    if (chartRef.current) {
-      const link = document.createElement('a');
-      link.download = `grafico_prophet_${graficoAtivo}_${Date.now()}.png`;
-      link.href = chartRef.current.toBase64Image();
-      link.click();
-    }
-  };
-
-  if (carregando) {
-    return (
-      <div className="text-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4" />
-        <p className="text-gray-600">Carregando gráficos do Prophet...</p>
-      </div>
-    );
-  }
-
-  if (!dadosProcessados || graficosDisponiveis.length === 0) {
+  
+  if (graficosDisponiveis.length === 0) {
     return (
       <div className="text-center py-12">
         <div className="text-4xl mb-4">🔮</div>
-        <h3 className="text-lg font-medium text-gray-700 mb-2">Dados insuficientes para gráficos</h3>
-        <p className="text-gray-500">Execute o modelo Prophet com dados válidos para visualizar os gráficos</p>
+        <p className="text-gray-500">Dados insuficientes para gráficos</p>
       </div>
     );
   }
-
-  const { nomeSerie, metricas } = dadosProcessados;
-
+  
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2 mb-6">
@@ -753,142 +587,25 @@ const GraficosProphet = ({ dados, tipoModelo }) => {
           <button
             key={grafico.id}
             onClick={() => setGraficoAtivo(grafico.id)}
-            className={`px-4 py-3 rounded-lg text-left transition-all flex-1 min-w-[140px] ${
+            className={`px-4 py-3 rounded-lg transition-all flex-1 ${
               graficoAtivo === grafico.id
-                ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg transform scale-105'
+                ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
             <div className="font-medium">{grafico.label}</div>
-            <div className="text-xs opacity-80">
-              {grafico.id === 'previsoes' ? 'Histórico vs Previsto' :
-               grafico.id === 'tendencia' ? 'Análise de Tendência' :
-               grafico.id === 'componentes' ? 'Componentes do Modelo' :
-               grafico.id === 'comparacao' ? 'Intervalos de Confiança' :
-               grafico.id === 'metricas' ? 'Performance' : 'Análise de Resíduos'}
-            </div>
           </button>
         ))}
       </div>
-
-      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+      <div className="bg-white p-6 rounded-xl border shadow-sm">
         <div className="h-[500px]">{renderizarGrafico()}</div>
       </div>
-
-      {graficosDisponiveis.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-            <div className="text-sm font-medium text-gray-700 mb-3">🛠️ Controles</div>
-            <div className="space-y-3">
-              <button onClick={exportarGrafico} className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium flex items-center justify-center gap-2">
-                📥 Exportar como PNG
-              </button>
-              <div className="text-xs text-gray-500">💡 Passe o mouse sobre os pontos/barras para ver detalhes</div>
-            </div>
-          </div>
-
-          <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-            <div className="text-sm font-medium text-purple-700 mb-2">💡 Interpretação</div>
-            <div className="text-sm text-purple-600 space-y-2">
-              {graficoAtivo === 'previsoes' && (
-                <>
-                  <p>Compara dados históricos, ajuste do modelo e previsões futuras.</p>
-                  <p><strong>Linha azul:</strong> Dados históricos.</p>
-                  <p><strong>Linha laranja tracejada:</strong> Modelo ajustado.</p>
-                  <p><strong>Linha vermelha:</strong> Previsões com intervalo de confiança.</p>
-                </>
-              )}
-              {graficoAtivo === 'tendencia' && (
-                <>
-                  <p>Análise detalhada da tendência.</p>
-                  <p><strong>Linha azul:</strong> Valores históricos.</p>
-                  <p><strong>Linha laranja:</strong> Média móvel (5 períodos).</p>
-                  <p><strong>Linha vermelha tracejada:</strong> Tendência linear.</p>
-                  <p><strong>Linha verde tracejada:</strong> Ajuste do Prophet.</p>
-                </>
-              )}
-              {graficoAtivo === 'componentes' && (
-                <>
-                  <p>Componente de tendência do modelo Prophet.</p>
-                  <p>Mostra a direção geral de longo prazo da série.</p>
-                </>
-              )}
-              {graficoAtivo === 'comparacao' && (
-                <>
-                  <p>Previsões pontuais com intervalos de confiança de 95%.</p>
-                  <p><strong>Linha verde:</strong> Previsão mais provável.</p>
-                  <p><strong>Área sombreada:</strong> Intervalo de confiança.</p>
-                </>
-              )}
-              {graficoAtivo === 'metricas' && (
-                <>
-                  <p>Desempenho do modelo.</p>
-                  <p><strong>MAPE:</strong> Erro percentual médio (ideal &lt; 10%).</p>
-                  <p><strong>RMSE/MAE:</strong> Medidas de erro absoluto.</p>
-                  <p><strong>R²:</strong> Variação explicada pelo modelo (0-1).</p>
-                </>
-              )}
-              {graficoAtivo === 'residuos' && (
-                <>
-                  <p>Avalia a qualidade do ajuste.</p>
-                  <p><strong>Resíduos dentro de ±2σ:</strong> Bom ajuste.</p>
-                  <p><strong>Padrão aleatório:</strong> Modelo bem especificado.</p>
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-pink-50 p-4 rounded-lg border border-pink-200">
-            <div className="text-sm font-medium text-pink-700 mb-2">🔮 Informações do Prophet</div>
-            <div className="text-sm text-pink-600 space-y-1">
-              <div className="flex justify-between"><span>Modelo:</span><span className="font-medium">Prophet</span></div>
-              <div className="flex justify-between"><span>Série:</span><span className="font-medium truncate">{nomeSerie}</span></div>
-              {metricas.mape !== undefined && !isNaN(metricas.mape) && (
-                <div className="flex justify-between"><span>MAPE:</span><span className="font-medium">{metricas.mape.toFixed(1)}%</span></div>
-              )}
-              {metricas.rmse !== undefined && !isNaN(metricas.rmse) && (
-                <div className="flex justify-between"><span>RMSE:</span><span className="font-medium">{metricas.rmse.toFixed(2)}</span></div>
-              )}
-              {dadosProcessados.dadosHistoricos && (
-                <div className="flex justify-between"><span>Observações:</span><span className="font-medium">{dadosProcessados.dadosHistoricos.length}</span></div>
-              )}
-              {dadosProcessados.dadosPrevisoes && (
-                <div className="flex justify-between"><span>Previsões:</span><span className="font-medium">{dadosProcessados.dadosPrevisoes.length}</span></div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
-// ==================== COMPONENTE PRINCIPAL ====================
+// ==================== FUNÇÕES AUXILIARES ====================
 
-const SimpleTabs = ({ tabs, defaultTab, className, children }) => {
-  const [activeTab, setActiveTab] = useState(defaultTab || tabs[0]?.id);
-  return (
-    <div className={className}>
-      <div className="flex border-b border-gray-200 mb-4">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 font-medium flex items-center gap-2 transition-all ${
-              activeTab === tab.id ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <span>{tab.icon}</span>
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      <div className="mt-4">{children(activeTab)}</div>
-    </div>
-  );
-};
-
-// Funções auxiliares
 const extrairPrevisoes = (resultado) => {
   if (resultado.previsoes && Array.isArray(resultado.previsoes) && resultado.previsoes.length > 0) {
     return resultado.previsoes.map(p => ({
@@ -896,47 +613,97 @@ const extrairPrevisoes = (resultado) => {
       data: p.data || p.ds || '',
       data_formatada: p.data_formatada || p.data || '',
       data_completa: p.data_completa || p.data || '',
-      previsao: parseFloat(p.previsao || p.yhat || p.previsao_valor || 0),
-      inferior: parseFloat(p.inferior || p.yhat_lower || p.intervalo_inferior || 0),
-      superior: parseFloat(p.superior || p.yhat_upper || p.intervalo_superior || 0),
+      previsao: parseFloat(p.previsao || p.yhat || 0),
+      inferior: parseFloat(p.inferior || p.yhat_lower || 0),
+      superior: parseFloat(p.superior || p.yhat_upper || 0),
       amplitude: parseFloat(p.amplitude || (p.yhat_upper - p.yhat_lower) || 0)
     }));
   }
-  if (resultado.resultado) return extrairPrevisoes(resultado.resultado);
   return [];
 };
 
 const extrairMetricas = (resultado) => {
   if (resultado.metricas) return resultado.metricas;
   if (resultado.qualidade_ajuste) return resultado.qualidade_ajuste;
-  if (resultado.metrics) return resultado.metrics;
   return {};
 };
 
 const extrairDadosOriginais = (resultado) => {
   if (resultado.dados_originais) return resultado.dados_originais;
-  if (resultado.dados) return resultado.dados;
-  if (resultado.historico) return { historico: resultado.historico };
-  return {};
+  return {
+    n_observacoes: resultado.interpretacao_tecnica?.n_observacoes || 0,
+    primeira_data: resultado.interpretacao_tecnica?.primeira_data,
+    ultima_data: resultado.interpretacao_tecnica?.ultima_data
+  };
 };
 
-export default function ResultadoProphet({ resultado, onVoltar, onNovoModelo }) {
+// ==================== COMPONENTE PRINCIPAL ====================
+
+const SimpleTabs = ({ tabs, defaultTab, children }) => {
+  const [activeTab, setActiveTab] = useState(defaultTab || tabs[0]?.id);
+  return (
+    <div>
+      <div className="flex border-b border-gray-200 mb-4">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 font-medium flex items-center gap-2 ${
+              activeTab === tab.id ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'
+            }`}
+          >
+            <span>{tab.icon}</span>{tab.label}
+          </button>
+        ))}
+      </div>
+      <div>{children(activeTab)}</div>
+    </div>
+  );
+};
+
+export default function ResultadoProphet({ resultado, dadosOriginais, onVoltar, onNovoModelo }) {
   const [dadosProcessados, setDadosProcessados] = useState(null);
 
   useEffect(() => {
     console.log('🔍 Resultado Prophet recebido:', resultado);
+    console.log('📊 dadosOriginais recebidos:', dadosOriginais);
     
     if (!resultado) return;
     
     const previsoes = extrairPrevisoes(resultado);
     const metricas = extrairMetricas(resultado);
-    const dadosOriginais = extrairDadosOriginais(resultado);
+    let dadosOriginaisProcessados = extrairDadosOriginais(resultado);
     
-    console.log('📊 Previsões extraídas:', previsoes.length);
+    // Se não tem dados históricos, usar dadosOriginais da prop
+    if ((!dadosOriginaisProcessados.historico || dadosOriginaisProcessados.historico.length === 0) && dadosOriginais) {
+      if (Array.isArray(dadosOriginais)) {
+        if (typeof dadosOriginais[0] === 'number') {
+          dadosOriginaisProcessados = {
+            historico: dadosOriginais,
+            n_observacoes: dadosOriginais.length,
+            media: dadosOriginais.reduce((a,b) => a+b, 0) / dadosOriginais.length,
+            minimo: Math.min(...dadosOriginais),
+            maximo: Math.max(...dadosOriginais)
+          };
+        } else if (typeof dadosOriginais[0] === 'object') {
+          const valores = dadosOriginais.map(item => item.valor || item.y || item.Inflacao_Turquia);
+          const datas = dadosOriginais.map(item => item.data || item.ds || item.Data);
+          dadosOriginaisProcessados = {
+            historico: valores,
+            datas: datas,
+            dados: dadosOriginais,
+            n_observacoes: valores.length,
+            media: valores.reduce((a,b) => a+b, 0) / valores.length,
+            minimo: Math.min(...valores),
+            maximo: Math.max(...valores),
+            primeira_data: datas[0],
+            ultima_data: datas[datas.length - 1]
+          };
+        }
+      }
+    }
     
-    let mediaPrevisao = 0;
-    let amplitudeMedia = 0;
-    let crescimentoPercentual = 0;
+    let mediaPrevisao = 0, amplitudeMedia = 0, crescimentoPercentual = 0;
     
     if (previsoes.length > 0) {
       const valoresValidos = previsoes.filter(p => !isNaN(p.previsao) && p.previsao !== 0);
@@ -951,37 +718,24 @@ export default function ResultadoProphet({ resultado, onVoltar, onNovoModelo }) 
       }
     }
     
-    setDadosProcessados({ previsoes, metricas, dadosOriginais, estatisticas: { mediaPrevisao, amplitudeMedia, crescimentoPercentual } });
-  }, [resultado]);
+    setDadosProcessados({ previsoes, metricas, dadosOriginais: dadosOriginaisProcessados, estatisticas: { mediaPrevisao, amplitudeMedia, crescimentoPercentual } });
+  }, [resultado, dadosOriginais]);
 
-  if (!resultado) {
+  if (!resultado || !dadosProcessados || dadosProcessados.previsoes.length === 0) {
     return (
       <div className="text-center p-8">
         <p className="text-gray-500">Nenhum resultado disponível</p>
-        <Button onClick={onVoltar} className="mt-4">Voltar para configuração</Button>
+        <Button onClick={onVoltar} className="mt-4">Voltar</Button>
       </div>
     );
   }
 
-  if (!dadosProcessados || dadosProcessados.previsoes.length === 0) {
-    return (
-      <div className="space-y-6">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-yellow-800">⚠️ Sem dados de previsão</h3>
-          <p className="text-yellow-700 mt-2">O modelo foi executado, mas não retornou previsões válidas.</p>
-          <p className="text-yellow-600 text-sm mt-1">Verifique se o pacote 'prophet' está instalado no servidor.</p>
-          <Button onClick={onVoltar} className="mt-4">Voltar para Configuração</Button>
-        </div>
-      </div>
-    );
-  }
-
-  const { previsoes, metricas, dadosOriginais, estatisticas } = dadosProcessados;
-
+  const { previsoes, metricas, dadosOriginais: dadosHist, estatisticas } = dadosProcessados;
+  
   const formatarNumero = (num) => num == null || isNaN(num) ? 'N/A' : Number(num).toFixed(2);
   const formatarNumeroPreciso = (num) => num == null || isNaN(num) ? 'N/A' : Number(num).toFixed(4);
   const formatarData = (data) => {
-    if (!data) return 'Data não disponível';
+    if (!data) return 'N/A';
     try {
       const d = new Date(data);
       if (isNaN(d.getTime())) return data;
@@ -992,330 +746,79 @@ export default function ResultadoProphet({ resultado, onVoltar, onNovoModelo }) 
   const tabs = [
     { id: 'previsoes', label: 'Previsões', icon: '🔮' },
     { id: 'metricas', label: 'Métricas', icon: '📊' },
-    { id: 'diagnostico', label: 'Diagnóstico', icon: '🔍' },
     { id: 'graficos', label: 'Gráficos', icon: '📈' }
   ];
 
-  const traduzirFrequencia = (freq) => {
-    const t = { day: 'Diária', week: 'Semanal', month: 'Mensal', quarter: 'Trimestral', year: 'Anual' };
-    return t[freq?.toLowerCase()] || freq || 'Mensal';
-  };
-
-  const exportarCSV = () => {
-    const csvData = [
-      ['Período', 'Data', 'Previsão', 'Inferior (95%)', 'Superior (95%)', 'Intervalo (±)'],
-      ...previsoes.map((p, i) => [
-        `Período ${p.periodo || i+1}`,
-        formatarData(p.data_completa || p.data),
-        formatarNumeroPreciso(p.previsao),
-        formatarNumeroPreciso(p.inferior),
-        formatarNumeroPreciso(p.superior),
-        p.amplitude ? `±${(p.amplitude / 2).toFixed(2)}` : 'N/A'
-      ])
-    ].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `prophet_previsoes_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-  };
-
-  const prepararDadosParaGraficos = () => {
-    if (!resultado) return null;
-    return {
-      previsoes,
-      metricas,
-      interpretacao_tecnica: resultado.interpretacao_tecnica || {},
-      dados_originais,
-      periodo_previsao: resultado.periodo_previsao || {},
-      qualidade_ajuste: resultado.qualidade_ajuste || {},
-      modelo_info: resultado.modelo_info || {},
-      nome: resultado.interpretacao_tecnica?.variavel || 'Prophet'
-    };
-  };
+  const prepararDadosParaGraficos = () => ({
+    previsoes,
+    metricas,
+    dados_originais: dadosHist,
+    interpretacao_tecnica: resultado.interpretacao_tecnica || {},
+    nome: resultado.interpretacao_tecnica?.variavel || 'Prophet'
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={onVoltar} className="p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Voltar para configuração">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">🔮 Resultados do Prophet</h1>
-            <p className="text-gray-600">
-              {resultado.interpretacao_tecnica?.variavel || 'Variável'} • 
-              {resultado.modelo_info?.crescimento || ' Linear'} • 
-              {traduzirFrequencia(resultado.interpretacao_tecnica?.frequencia)}
-            </p>
-          </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold">🔮 Resultados do Prophet</h1>
+          <p className="text-gray-600">{resultado.interpretacao_tecnica?.variavel || 'Variável'} • Linear • Mensal</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={exportarCSV} variant="outline" size="sm">📥 Exportar CSV</Button>
           <Button onClick={onNovoModelo} variant="primary" size="sm">Novo Modelo</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-blue-600 font-medium">Média das Previsões</p>
-                <h3 className="text-2xl font-bold text-blue-800 mt-1">{formatarNumero(estatisticas.mediaPrevisao)}</h3>
-              </div>
-              <Activity className="w-8 h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-purple-600 font-medium">Amplitude Média</p>
-                <h3 className="text-2xl font-bold text-purple-800 mt-1">{formatarNumero(estatisticas.amplitudeMedia)}</h3>
-              </div>
-              <BarChart2 className="w-8 h-8 text-purple-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className={`bg-gradient-to-br ${estatisticas.crescimentoPercentual >= 0 ? 'from-green-50 to-green-100' : 'from-red-50 to-red-100'}`}>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600 font-medium">Crescimento Total</p>
-                <h3 className={`text-2xl font-bold mt-1 ${estatisticas.crescimentoPercentual >= 0 ? 'text-green-800' : 'text-red-800'}`}>{estatisticas.crescimentoPercentual.toFixed(1)}%</h3>
-              </div>
-              {estatisticas.crescimentoPercentual >= 0 ? <TrendingUp className="w-8 h-8 text-green-600" /> : <TrendingDown className="w-8 h-8 text-red-600" />}
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-orange-50 to-orange-100">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-orange-600 font-medium">Qualidade do Ajuste</p>
-                <h3 className="text-2xl font-bold text-orange-800 mt-1">
-                  {metricas.mape ? (metricas.mape < 10 ? 'Excelente' : metricas.mape < 20 ? 'Boa' : 'Razoável') : 'N/A'}
-                </h3>
-              </div>
-              <Target className="w-8 h-8 text-orange-600" />
-            </div>
-            <p className="text-xs text-orange-700 mt-2">MAPE: {metricas.mape ? metricas.mape.toFixed(1) + '%' : 'N/A'}</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-4 gap-4">
+        <Card><CardContent className="pt-6"><p className="text-sm text-blue-600">Média das Previsões</p><h3 className="text-2xl font-bold">{formatarNumero(estatisticas.mediaPrevisao)}</h3></CardContent></Card>
+        <Card><CardContent className="pt-6"><p className="text-sm text-purple-600">Amplitude Média</p><h3 className="text-2xl font-bold">{formatarNumero(estatisticas.amplitudeMedia)}</h3></CardContent></Card>
+        <Card><CardContent className="pt-6"><p className="text-sm text-green-600">Crescimento Total</p><h3 className="text-2xl font-bold">{estatisticas.crescimentoPercentual.toFixed(1)}%</h3></CardContent></Card>
+        <Card><CardContent className="pt-6"><p className="text-sm text-orange-600">Qualidade</p><h3 className="text-2xl font-bold">{metricas.mape ? (metricas.mape < 10 ? 'Excelente' : metricas.mape < 20 ? 'Boa' : 'Razoável') : 'N/A'}</h3><p className="text-xs">MAPE: {metricas.mape ? metricas.mape.toFixed(1) + '%' : 'N/A'}</p></CardContent></Card>
       </div>
 
-      <SimpleTabs tabs={tabs} defaultTab="previsoes" className="mb-6">
+      <SimpleTabs tabs={tabs} defaultTab="previsoes">
         {(activeTab) => (
-          <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
-            
+          <motion.div key={activeTab} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             {activeTab === 'previsoes' && (
               <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle>Previsões Futuras - Prophet</CardTitle>
-                      <p className="text-sm text-gray-600">Intervalo de confiança: {resultado.modelo_info?.intervalo_confianca ? `${(resultado.modelo_info.intervalo_confianca * 100).toFixed(0)}%` : '95%'}</p>
-                    </div>
-                    <Badge variant="success">{previsoes.length} períodos previstos</Badge>
-                  </div>
-                </CardHeader>
+                <CardHeader><CardTitle>Previsões Futuras</CardTitle><Badge variant="success">{previsoes.length} períodos</Badge></CardHeader>
                 <CardContent>
-                  <div className="overflow-x-auto rounded-lg border shadow-sm">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Período</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Data</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Previsão</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Inferior (95%)</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Superior (95%)</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Intervalo</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {previsoes.map((p, idx) => {
-                          const intervalo = p.amplitude ? (p.amplitude / 2).toFixed(2) : (p.superior && p.inferior) ? ((p.superior - p.inferior) / 2).toFixed(2) : 'N/A';
-                          return (
-                            <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-6 py-4 whitespace-nowrap"><span className="font-medium text-gray-800">Período {p.periodo || idx + 1}</span></td>
-                              <td className="px-6 py-4 whitespace-nowrap"><span className="text-gray-700">{formatarData(p.data_completa || p.data)}</span></td>
-                              <td className="px-6 py-4 whitespace-nowrap"><span className="font-bold text-blue-700">{formatarNumeroPreciso(p.previsao)}</span></td>
-                              <td className="px-6 py-4 whitespace-nowrap"><span className="text-gray-600">{formatarNumeroPreciso(p.inferior)}</span></td>
-                              <td className="px-6 py-4 whitespace-nowrap"><span className="text-gray-600">{formatarNumeroPreciso(p.superior)}</span></td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center">
-                                  <div className="flex-1 mr-2">
-                                    <div className="w-full bg-gray-200 rounded-full h-2">
-                                      <div className="bg-green-500 h-2 rounded-full" style={{ width: `${Math.min(100, ((p.amplitude || 0) / (Math.abs(p.previsao) || 1)) * 10)}%` }} />
-                                    </div>
-                                  </div>
-                                  <span className="text-sm font-medium text-gray-700">±{intervalo}</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full">
+                      <thead className="bg-gray-50"><tr>{['Período', 'Data', 'Previsão', 'Inferior', 'Superior', 'Intervalo'].map(h => <th key={h} className="px-4 py-2 text-left">{h}</th>)}</thead>
+                      <tbody>
+                        {previsoes.map((p, i) => (
+                          <tr key={i} className="border-t">
+                            <td className="px-4 py-2">{i+1}</td>
+                            <td className="px-4 py-2">{formatarData(p.data_completa || p.data)}</td>
+                            <td className="px-4 py-2 font-bold text-blue-700">{formatarNumeroPreciso(p.previsao)}</td>
+                            <td className="px-4 py-2">{formatarNumeroPreciso(p.inferior)}</td>
+                            <td className="px-4 py-2">{formatarNumeroPreciso(p.superior)}</td>
+                            <td className="px-4 py-2">±{((p.amplitude || (p.superior - p.inferior)) / 2).toFixed(2)}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
-                  <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                    <h4 className="font-semibold text-blue-800 mb-3">📊 Resumo das Previsões</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="text-center">
-                        <p className="text-sm text-gray-600">Valor Mínimo Previsto</p>
-                        <p className="text-xl font-bold text-blue-700">{previsoes.length ? formatarNumeroPreciso(Math.min(...previsoes.map(p => p.previsao || 0))) : 'N/A'}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm text-gray-600">Valor Máximo Previsto</p>
-                        <p className="text-xl font-bold text-green-700">{previsoes.length ? formatarNumeroPreciso(Math.max(...previsoes.map(p => p.previsao || 0))) : 'N/A'}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm text-gray-600">Amplitude Média Relativa</p>
-                        <p className="text-xl font-bold text-purple-700">{estatisticas.mediaPrevisao !== 0 ? `${((estatisticas.amplitudeMedia / Math.abs(estatisticas.mediaPrevisao)) * 100).toFixed(1)}%` : 'N/A'}</p>
-                      </div>
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
             )}
-
+            
             {activeTab === 'metricas' && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader><CardTitle>📐 Métricas de Desempenho</CardTitle></CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {[
-                        { label: 'MSE (Erro Quadrático Médio)', value: metricas.mse, color: 'blue' },
-                        { label: 'RMSE (Raiz do Erro Quadrático)', value: metricas.rmse, color: 'purple' },
-                        { label: 'MAE (Erro Absoluto Médio)', value: metricas.mae, color: 'green' },
-                        { label: 'MAPE (Erro Percentual Absoluto Médio)', value: metricas.mape, color: 'orange' }
-                      ].map((m, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                          <span className="text-gray-700">{m.label}</span>
-                          <span className={`font-bold text-${m.color}-600`}>
-                            {m.value !== undefined && !isNaN(m.value) ? formatarNumero(m.value) : 'N/A'}
-                            {m.label.includes('MAPE') && m.value !== undefined && '%'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {metricas.mape !== undefined && !isNaN(metricas.mape) && (
-                      <div className="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
-                        <h4 className="font-semibold text-orange-800 mb-2">🎯 Interpretação do MAPE</h4>
-                        <div className="text-sm text-gray-700">
-                          {metricas.mape < 10 && <p>✅ <strong>Excelente previsão</strong> (MAPE &lt; 10%)</p>}
-                          {metricas.mape >= 10 && metricas.mape < 20 && <p>👍 <strong>Boa previsão</strong> (MAPE 10-20%)</p>}
-                          {metricas.mape >= 20 && metricas.mape < 50 && <p>⚠️ <strong>Previsão razoável</strong> (MAPE 20-50%)</p>}
-                          {metricas.mape >= 50 && <p>❌ <strong>Baixa precisão</strong> (MAPE &gt; 50%)</p>}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader><CardTitle>📊 Estatísticas dos Dados</CardTitle></CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <p className="text-sm text-blue-600 font-medium">Período Histórico</p>
-                          <p className="text-lg font-bold text-blue-800">{formatarData(dadosOriginais.primeira_data) || 'N/A'}</p>
-                          <p className="text-xs text-blue-700">Primeira observação</p>
-                        </div>
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <p className="text-sm text-green-600 font-medium">Período Histórico</p>
-                          <p className="text-lg font-bold text-green-800">{formatarData(dadosOriginais.ultima_data) || 'N/A'}</p>
-                          <p className="text-xs text-green-700">Última observação</p>
-                        </div>
-                      </div>
-                      {[
-                        { label: 'Número de Observações', value: dadosOriginais.n_observacoes || resultado.interpretacao_tecnica?.n_observacoes, icon: '📈' },
-                        { label: 'Média dos Dados', value: dadosOriginais.media, icon: '📊' },
-                        { label: 'Desvio Padrão', value: dadosOriginais.desvio_padrao, icon: '📐' },
-                        { label: 'Valor Mínimo', value: dadosOriginais.minimo, icon: '📉' },
-                        { label: 'Valor Máximo', value: dadosOriginais.maximo, icon: '📈' }
-                      ].map((s, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <span className="text-xl">{s.icon}</span>
-                            <span className="text-gray-700">{s.label}</span>
-                          </div>
-                          <span className="font-bold text-gray-900">{s.value !== undefined && !isNaN(s.value) ? formatarNumero(s.value) : 'N/A'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
+              <div className="grid grid-cols-2 gap-6">
+                <Card><CardHeader><CardTitle>Métricas de Desempenho</CardTitle></CardHeader><CardContent>{['rmse', 'mae', 'mape', 'mse'].map(m => (<div key={m} className="flex justify-between p-2"><span>{m.toUpperCase()}</span><span className="font-bold">{metricas[m] !== undefined ? formatarNumero(metricas[m]) + (m === 'mape' ? '%' : '') : 'N/A'}</span></div>))}</CardContent></Card>
+                <Card><CardHeader><CardTitle>Estatísticas dos Dados</CardTitle></CardHeader><CardContent><div className="grid grid-cols-2 gap-2"><div>Início:</div><div>{formatarData(dadosHist.primeira_data)}</div><div>Fim:</div><div>{formatarData(dadosHist.ultima_data)}</div><div>Observações:</div><div>{dadosHist.n_observacoes || 'N/A'}</div><div>Média:</div><div>{formatarNumero(dadosHist.media)}</div><div>Mínimo:</div><div>{formatarNumero(dadosHist.minimo)}</div><div>Máximo:</div><div>{formatarNumero(dadosHist.maximo)}</div></div></CardContent></Card>
               </div>
             )}
-
-            {activeTab === 'diagnostico' && (
-              <Card>
-                <CardHeader><CardTitle>🔍 Diagnóstico do Modelo Prophet</CardTitle></CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-4">
-                      <h4 className="font-semibold text-gray-800">Configuração do Modelo</h4>
-                      <div className="space-y-3">
-                        {[
-                          { label: 'Tipo de Crescimento', value: resultado.modelo_info?.crescimento || 'Linear' },
-                          { label: 'Intervalo de Confiança', value: `${((resultado.modelo_info?.intervalo_confianca || 0.95) * 100).toFixed(0)}%` },
-                          { label: 'Frequência da Série', value: traduzirFrequencia(resultado.interpretacao_tecnica?.frequencia) },
-                          { label: 'Feriados Incluídos', value: resultado.modelo_info?.feriados_incluidos ? 'Sim' : 'Não' },
-                          { label: 'Sazonalidade', value: resultado.modelo_info?.sazonalidade || 'Aditiva' },
-                          { label: 'Períodos Previstos', value: resultado.periodo_previsao?.n_periodos || previsoes.length }
-                        ].map((item, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-2 hover:bg-gray-50 rounded">
-                            <span className="text-gray-600">{item.label}</span>
-                            <Badge variant="outline">{item.value}</Badge>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-gray-800 mb-4">💡 Recomendações</h4>
-                      <div className="space-y-3">
-                        {estatisticas.amplitudeMedia > Math.abs(estatisticas.mediaPrevisao) * 0.3 && (
-                          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg">
-                            <p className="text-yellow-800 font-medium">⚠️ Alta Incerteza</p>
-                            <p className="text-sm text-yellow-700">Intervalos de confiança muito amplos. Considere aumentar o número de observações históricas.</p>
-                          </div>
-                        )}
-                        {metricas.mape > 50 && (
-                          <div className="bg-red-50 border border-red-200 p-3 rounded-lg">
-                            <p className="text-red-800 font-medium">❌ Baixa Precisão</p>
-                            <p className="text-sm text-red-700">MAPE acima de 50%. Considere transformar os dados ou ajustar hiperparâmetros.</p>
-                          </div>
-                        )}
-                        {(dadosOriginais.n_observacoes || 0) < 24 && (
-                          <div className="bg-purple-50 border border-purple-200 p-3 rounded-lg">
-                            <p className="text-purple-800 font-medium">📊 Poucas Observações</p>
-                            <p className="text-sm text-purple-700">Menos de 24 observações. Prophet funciona melhor com séries mais longas.</p>
-                          </div>
-                        )}
-                        <div className="bg-green-50 border border-green-200 p-3 rounded-lg">
-                          <p className="text-green-800 font-medium">✅ Pontos Fortes do Prophet</p>
-                          <p className="text-sm text-green-700">Excelente com sazonalidades múltiplas, robusto a dados faltantes, interpretação direta das tendências.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {activeTab === 'graficos' && <GraficosProphet dados={prepararDadosParaGraficos()} tipoModelo="prophet" />}
             
+            {activeTab === 'graficos' && <GraficosProphet dados={prepararDadosParaGraficos()} dadosOriginaisExtras={dadosOriginais} tipoModelo="prophet" />}
           </motion.div>
         )}
       </SimpleTabs>
 
-      <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-        <Button onClick={onVoltar} variant="outline">⬅️ Voltar para Configuração</Button>
-        <Button onClick={onNovoModelo} variant="primary">🔮 Criar Novo Modelo</Button>
+      <div className="flex justify-between pt-4">
+        <Button onClick={onVoltar} variant="outline">⬅️ Voltar</Button>
+        <Button onClick={onNovoModelo} variant="primary">🔮 Novo Modelo</Button>
       </div>
     </div>
   );
