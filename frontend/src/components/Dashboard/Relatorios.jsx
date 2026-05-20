@@ -1,6 +1,4 @@
-﻿// C:\Users\VhenancioMarthinz\Downloads\JiamPreditivo\frontend\src\components\Dashboard\Relatorios.jsx
-
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -2883,4 +2881,4 @@ export default function Relatorios({ resultados = [], modelosSalvos = {}, dados 
       />
     </div>
   );
-}0.
+}
