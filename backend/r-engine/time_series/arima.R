@@ -729,9 +729,23 @@ processar_resultado_arima_profissional <- function(modelo, ts_data, n_previsoes,
     # Previsões
     previsoes = previsoes_list,
     
-    # Dados originais
+    # Extrair anos da série temporal
+    anos_ts <- as.numeric(time(ts_data))
+    
     dados_originais = list(
       n_observacoes = length(ts_data),
+      # ✅ ADICIONAR OS VALORES HISTÓRICOS REAIS
+      historico = as.list(as.numeric(ts_data)),
+      datas = as.list(anos_ts),
+      # Criar array de objetos para facilitar o frontend
+      dados = lapply(1:length(ts_data), function(i) {
+        list(
+          periodo = as.character(anos_ts[i]),
+          data = as.character(anos_ts[i]),
+          valor = as.numeric(ts_data[i]),
+          tipo = "historico"
+        )
+      }),
       estatisticas = list(
         media = as.numeric(mean(ts_data, na.rm = TRUE)),
         mediana = as.numeric(median(ts_data, na.rm = TRUE)),
