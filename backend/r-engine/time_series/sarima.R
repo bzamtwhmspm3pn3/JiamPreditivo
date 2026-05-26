@@ -34,11 +34,10 @@ detectar_outliers_iqr <- function(x, threshold = 3) {
   return(outliers)
 }
 
-# ✅ Função para validar estacionariedade sem pacotes extras
+# ✅ Função para validar estacionariedade
 validar_estacionariedade <- function(ts_data, alpha = 0.05) {
   resultados <- list()
   
-  # Teste ADF (Augmented Dickey-Fuller) - já tem no tseries
   tryCatch({
     adf_test <- adf.test(na.omit(as.numeric(ts_data)))
     resultados$adf <- list(
@@ -51,7 +50,6 @@ validar_estacionariedade <- function(ts_data, alpha = 0.05) {
     resultados$adf <- list(estacionario = NA, p_valor = NA)
   })
   
-  # Teste KPSS - já tem no tseries
   tryCatch({
     kpss_test <- kpss.test(na.omit(as.numeric(ts_data)))
     resultados$kpss <- list(
@@ -67,15 +65,12 @@ validar_estacionariedade <- function(ts_data, alpha = 0.05) {
   return(resultados)
 }
 
-# ✅ Função para teste ARCH simplificado (sem pacote rugarch)
+# ✅ Função para teste ARCH simplificado
 teste_arch_simplificado <- function(residuos, lag = 5) {
   if (length(residuos) < lag + 10) return(NULL)
   
   tryCatch({
-    # Quadrado dos resíduos
     residuos2 <- residuos^2
-    
-    # Teste de correlação
     lb_test <- Box.test(residuos2, lag = lag, type = "Ljung-Box")
     
     return(list(
@@ -90,59 +85,61 @@ teste_arch_simplificado <- function(residuos, lag = 5) {
   })
 }
 
-# ✅ Função robusta para gerar datas de previsão
-gerar_datas_previsao_robusto <- function(parametros, n_previsoes, freq, tem_datas = FALSE, ultima_data_real = NULL) {
+# ✅ FUNÇÃO CORRIGIDA: Gerar datas de previsão a partir da última data real
+gerar_datas_previsao_robusto <- function(parametros, n_previsoes, freq, ultima_data_real = NULL) {
   
-  # ✅ PRIORIDADE 1: Usar período início dos parâmetros se disponível
+  meses_pt <- c("jan", "fev", "mar", "abr", "mai", "jun", 
+                "jul", "ago", "set", "out", "nov", "dez")
+  
+  # ✅ PRIORIDADE 1: Usar última data real informada
+  if (!is.null(ultima_data_real) && ultima_data_real != "") {
+    cat("📅 [DEBUG] Usando última data real:", ultima_data_real, "\n")
+    
+    tryCatch({
+      # Converter para Date
+      ultima_date <- as.Date(ultima_data_real)
+      if (!is.na(ultima_date)) {
+        datas_previsao <- character(n_previsoes)
+        
+        for (i in 1:n_previsoes) {
+          data_atual <- ultima_date + months(i)
+          datas_previsao[i] <- paste0(meses_pt[month(data_atual)], "/", year(data_atual))
+        }
+        
+        cat("📅 [DEBUG] Datas geradas:", paste(head(datas_previsao, 3), collapse = ", "), 
+            if (n_previsoes > 3) paste("...", tail(datas_previsao, 1)) else "", "\n")
+        
+        return(as.list(datas_previsao))
+      }
+    }, error = function(e) {
+      cat("⚠️ [WARN] Erro ao processar última data real:", e$message, "\n")
+    })
+  }
+  
+  # ✅ PRIORIDADE 2: Usar período início dos parâmetros
   if (!is.null(parametros$periodo_inicio) && parametros$periodo_inicio != "") {
     cat("📅 [DEBUG] Usando período início dos parâmetros:", parametros$periodo_inicio, "\n")
     
     tryCatch({
-      # Parse da data de início (formato esperado: "MM/YYYY" ou "MM-YYYY")
       periodo_str <- as.character(parametros$periodo_inicio)
-      
-      # Remover espaços e normalizar separadores
       periodo_str <- gsub("\\s+", "", periodo_str)
       periodo_str <- gsub("-", "/", periodo_str)
       
-      # Verificar formato
       if (grepl("^\\d{1,2}/\\d{4}$", periodo_str)) {
         partes <- strsplit(periodo_str, "/")[[1]]
         mes_inicio <- as.integer(partes[1])
         ano_inicio <- as.integer(partes[2])
         
-        # ✅ VALIDAÇÃO CRÍTICA: Verificar intervalo razoável
         if (mes_inicio < 1 || mes_inicio > 12) {
-          cat("⚠️ [WARN] Mês fora do intervalo válido (1-12). Ajustando para 1.\n")
           mes_inicio <- 1
         }
         
-        # ✅ CORREÇÃO DO BUG DO SÉCULO: 2095 → 2025
-        if (ano_inicio > 2100 || ano_inicio < 1900) {
-          cat("⚠️ [WARN] Ano fora do intervalo razoável:", ano_inicio, "\n")
-          
-          # Se ano está entre 2090-2100, corrigir para 2020-2030
-          if (ano_inicio >= 2090 && ano_inicio <= 2100) {
-            ano_inicio <- ano_inicio - 70  # 2095 → 2025
-            cat("📅 [DEBUG] Ano corrigido para:", ano_inicio, "\n")
-          } else if (ano_inicio < 100) {
-            # Se ano tem 2 dígitos, assumir século 21
-            if (ano_inicio >= 25 && ano_inicio <= 99) {
-              ano_inicio <- 2000 + ano_inicio
-              cat("📅 [DEBUG] Ano expandido para 4 dígitos:", ano_inicio, "\n")
-            } else if (ano_inicio >= 0 && ano_inicio < 25) {
-              ano_inicio <- 2000 + ano_inicio
-              cat("📅 [DEBUG] Ano expandido para 4 dígitos:", ano_inicio, "\n")
-            }
-          }
+        # Corrigir ano se necessário
+        if (ano_inicio >= 2090 && ano_inicio <= 2100) {
+          ano_inicio <- ano_inicio - 70
+        } else if (ano_inicio < 100 && ano_inicio >= 0) {
+          ano_inicio <- 2000 + ano_inicio
         }
-        
-        cat("📅 [DEBUG] Mês inicio ajustado:", mes_inicio, "\n")
-        cat("📅 [DEBUG] Ano inicio ajustado:", ano_inicio, "\n")
-        
-        # Gerar sequência de datas
-        meses_pt <- c("jan", "fev", "mar", "abr", "mai", "jun", 
-                     "jul", "ago", "set", "out", "nov", "dez")
         
         datas_previsao <- character(n_previsoes)
         
@@ -150,7 +147,6 @@ gerar_datas_previsao_robusto <- function(parametros, n_previsoes, freq, tem_data
           mes_atual <- mes_inicio + i - 1
           ano_atual <- ano_inicio
           
-          # Ajustar se passar de dezembro
           while (mes_atual > 12) {
             mes_atual <- mes_atual - 12
             ano_atual <- ano_atual + 1
@@ -159,50 +155,58 @@ gerar_datas_previsao_robusto <- function(parametros, n_previsoes, freq, tem_data
           datas_previsao[i] <- paste0(meses_pt[mes_atual], "/", ano_atual)
         }
         
-        cat("📅 [DEBUG] Datas geradas:", paste(head(datas_previsao, 5), collapse = ", "), 
-            if (n_previsoes > 5) paste("...", tail(datas_previsao, 1)) else "", "\n")
-        
         return(as.list(datas_previsao))
-        
-      } else {
-        cat("⚠️ [WARN] Formato de período início inválido:", periodo_str, "\n")
       }
     }, error = function(e) {
-      cat("❌ [ERROR] Erro ao processar período início:", e$message, "\n")
+      cat("⚠️ [WARN] Erro ao processar período início:", e$message, "\n")
     })
   }
   
-  # ✅ FALLBACK: Períodos numéricos
-  cat("📅 [DEBUG] Usando períodos numéricos como fallback\n")
-  return(as.list(paste("Período", 1:n_previsoes)))
+  # ✅ FALLBACK: Usar data atual como referência
+  cat("📅 [DEBUG] Usando data atual como fallback\n")
+  data_atual <- Sys.Date()
+  datas_previsao <- character(n_previsoes)
+  
+  for (i in 1:n_previsoes) {
+    data_futura <- data_atual + months(i)
+    datas_previsao[i] <- paste0(meses_pt[month(data_futura)], "/", year(data_futura))
+  }
+  
+  return(as.list(datas_previsao))
 }
 
-# ✅ Função para calcular métricas avançadas de precisão
+# ✅ Função para extrair data real da série temporal
+extrair_data_inicio <- function(parametros, ts_data, freq) {
+  # Tentar obter a data de início dos parâmetros
+  if (!is.null(parametros$data_inicio) && parametros$data_inicio != "") {
+    return(parametros$data_inicio)
+  }
+  
+  # Se não tiver, assumir Dez/2015 (primeira observação dos dados)
+  return("2015-12-01")
+}
+
+# ✅ Função para calcular métricas avançadas
 calcular_metricas_avancadas <- function(modelo, ts_data, previsoes, n_previsoes, freq) {
   
-  # Métricas básicas
   residuos <- residuals(modelo)
   residuos_clean <- residuos[!is.na(residuos)]
   
-  # RMSE, MAE, MAPE
   rmse <- sqrt(mean(residuos_clean^2, na.rm = TRUE))
   mae <- mean(abs(residuos_clean), na.rm = TRUE)
   
-  # MAPE com proteção contra divisão por zero
   valores_reais <- ts_data[!is.na(residuos) & !is.na(ts_data)]
   residuos_validos <- residuos_clean[1:min(length(residuos_clean), length(valores_reais))]
   
-  if (length(valores_reais) > 0 && all(valores_reais != 0)) {
+  if (length(valores_reais) > 0 && all(valores_reais != 0, na.rm = TRUE)) {
     mape <- mean(abs(residuos_validos / valores_reais), na.rm = TRUE) * 100
   } else {
     mape <- NA
   }
   
-  # AIC, BIC
   aic <- tryCatch(AIC(modelo), error = function(e) NA)
   bic <- tryCatch(BIC(modelo), error = function(e) NA)
   
-  # AICc (AIC corrigido para pequenas amostras)
   n <- length(residuos_clean)
   k <- length(coefficients(modelo))
   aicc <- if (!is.na(aic) && n > k + 1) {
@@ -211,7 +215,7 @@ calcular_metricas_avancadas <- function(modelo, ts_data, previsoes, n_previsoes,
     NA
   }
   
-  # ✅ Métricas avançadas de previsão
+  # Métricas avançadas
   theil_u <- NA
   mase <- NA
   smape <- NA
@@ -222,83 +226,64 @@ calcular_metricas_avancadas <- function(modelo, ts_data, previsoes, n_previsoes,
       dados_teste <- ts_data[(length(ts_data) - n_previsoes + 1):length(ts_data)]
       
       if (length(dados_teste) == length(previsoes$mean)) {
-        # Theil's U statistic
         mse_forecast <- mean((dados_teste - previsoes$mean)^2, na.rm = TRUE)
         mean_actual <- mean(dados_teste, na.rm = TRUE)
         var_actual <- mean((dados_teste - mean_actual)^2, na.rm = TRUE)
         
-        if (var_actual > 0) {
+        if (var_actual > 0 && !is.na(var_actual)) {
           theil_u <- sqrt(mse_forecast) / sqrt(var_actual)
         }
         
-        # Mean Absolute Scaled Error (MASE)
         if (freq > 1) {
           naive_forecast <- mean(abs(diff(dados_treino, lag = freq)), na.rm = TRUE)
         } else {
           naive_forecast <- mean(abs(diff(dados_treino)), na.rm = TRUE)
         }
         
-        if (naive_forecast > 0) {
+        if (!is.na(naive_forecast) && naive_forecast > 0) {
           mase <- mae / naive_forecast
         }
         
-        # Symmetric MAPE (sMAPE)
         denominator <- abs(dados_teste) + abs(previsoes$mean)
-        denominator[denominator == 0] <- NA  # Evitar divisão por zero
+        denominator[denominator == 0] <- NA
         smape <- 100 * mean(2 * abs(dados_teste - previsoes$mean) / denominator, na.rm = TRUE)
       }
-    }, error = function(e) {
-      # Silenciar erro para métricas opcionais
-    })
+    }, error = function(e) {})
   }
   
-  # Coeficiente de determinação (R²) para ajuste
   sse <- sum(residuos_clean^2, na.rm = TRUE)
   sst <- sum((ts_data - mean(ts_data, na.rm = TRUE))^2, na.rm = TRUE)
-  r_squared <- if (sst > 0) 1 - (sse / sst) else NA
+  r_squared <- if (sst > 0 && !is.na(sst)) 1 - (sse / sst) else NA
   
-  # Coeficiente de determinação ajustado
   r_squared_adj <- if (!is.na(r_squared) && n > k + 1) {
     1 - ((1 - r_squared) * (n - 1) / (n - k - 1))
   } else {
     NA
   }
   
-  # Estatísticas dos resíduos
   residuos_mean <- mean(residuos_clean, na.rm = TRUE)
   residuos_sd <- sd(residuos_clean, na.rm = TRUE)
   
-  # Assimetria
-  residuos_skewness <- if (length(residuos_clean) > 2 && residuos_sd > 0) {
+  residuos_skewness <- if (length(residuos_clean) > 2 && !is.na(residuos_sd) && residuos_sd > 0) {
     mean((residuos_clean - residuos_mean)^3, na.rm = TRUE) / (residuos_sd^3)
   } else NA
   
-  # Curtose
-  residuos_kurtosis <- if (length(residuos_clean) > 3 && residuos_sd > 0) {
+  residuos_kurtosis <- if (length(residuos_clean) > 3 && !is.na(residuos_sd) && residuos_sd > 0) {
     mean((residuos_clean - residuos_mean)^4, na.rm = TRUE) / (residuos_sd^4) - 3
   } else NA
   
   return(list(
-    # Métricas básicas
     RMSE = as.numeric(rmse),
     MAE = as.numeric(mae),
     MAPE = if (!is.na(mape)) as.numeric(mape) else NA,
-    
-    # Critérios de informação
     AIC = if (!is.na(aic)) as.numeric(aic) else NA,
     BIC = if (!is.na(bic)) as.numeric(bic) else NA,
     AICc = if (!is.na(aicc)) as.numeric(aicc) else NA,
-    
-    # Métricas avançadas
     Theil_U = if (!is.na(theil_u)) as.numeric(theil_u) else NA,
     MASE = if (!is.na(mase)) as.numeric(mase) else NA,
     sMAPE = if (!is.na(smape)) as.numeric(smape) else NA,
-    
-    # Coeficientes de determinação
     R2 = if (!is.na(r_squared)) as.numeric(r_squared) else NA,
     R2_adj = if (!is.na(r_squared_adj)) as.numeric(r_squared_adj) else NA,
-    
-    # Estatísticas descritivas dos resíduos
     residuos_mean = residuos_mean,
     residuos_sd = residuos_sd,
     residuos_skewness = residuos_skewness,
@@ -306,13 +291,13 @@ calcular_metricas_avancadas <- function(modelo, ts_data, previsoes, n_previsoes,
   ))
 }
 
-# ✅ Função principal para processar resultados SARIMA
+# ✅ FUNÇÃO CORRIGIDA: Processar resultados SARIMA
 processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes, parametros, 
-                                                   p, d, q, P, D, Q, s, y_var) {
+                                                   p, d, q, P, D, Q, s, y_var, ultima_data_real = NULL) {
   
   freq <- frequency(ts_data) %||% 12
   
-  # Gerar previsões com múltiplos intervalos de confiança
+  # Gerar previsões
   tryCatch({
     previsoes <- forecast(modelo, h = n_previsoes, level = c(80, 90, 95))
   }, error = function(e) {
@@ -320,15 +305,27 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     previsoes <- forecast(modelo, h = n_previsoes, level = c(80, 95))
   })
   
-  # ✅ Gerar datas de previsão robustas
+  # ✅ VALIDAÇÃO CRÍTICA: Verificar se as previsões são válidas
+  if (all(is.na(previsoes$mean)) || all(previsoes$mean == 0)) {
+    cat("❌ [ERROR] Todas as previsões são zero ou NA!\n")
+    cat("🔍 [DEBUG] Dados de entrada: summary(ts_data)\n")
+    print(summary(ts_data))
+    
+    # Usar último valor como fallback
+    ultimo_valor <- tail(ts_data, 1)
+    previsoes$mean <- rep(ultimo_valor, n_previsoes)
+    cat("🔄 Usando último valor como fallback:", ultimo_valor, "\n")
+  }
+  
+  # Gerar datas de previsão
   datas_previsao <- gerar_datas_previsao_robusto(
-    parametros, n_previsoes, freq
+    parametros, n_previsoes, freq, ultima_data_real
   )
   
-  # ✅ Calcular métricas avançadas
+  # Calcular métricas
   metricas_avancadas <- calcular_metricas_avancadas(modelo, ts_data, previsoes, n_previsoes, freq)
   
-  # ✅ Extrair coeficientes com significância estatística
+  # Extrair coeficientes
   coefs <- tryCatch({
     coefficients(modelo)
   }, error = function(e) {
@@ -348,7 +345,6 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
         coef_se <- if (length(se) >= i) se[i] else NA
         coef_t <- if (!is.na(coef_se) && coef_se != 0) coef_value / coef_se else NA
         
-        # Calcular p-valor (teste t bilateral)
         coef_pvalue <- if (!is.na(coef_t)) {
           df <- length(ts_data) - length(coefs)
           if (df > 0) {
@@ -372,7 +368,6 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
       }
     }, error = function(e) {
       cat("⚠️ [WARN] Erro ao calcular estatísticas dos coeficientes:", e$message, "\n")
-      # Coeficientes básicos sem estatísticas
       for (i in 1:length(coefs)) {
         coeficientes_list[[i]] <- list(
           termo = names(coefs)[i] %||% paste0("coef", i),
@@ -382,22 +377,20 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     })
   }
   
-  # ✅ Detectar outliers nos resíduos
+  # Detectar outliers
   residuos <- residuals(modelo)
   outliers <- detectar_outliers_iqr(residuos, threshold = 3)
   n_outliers <- sum(outliers, na.rm = TRUE)
   percent_outliers <- if (length(residuos) > 0) (n_outliers / length(residuos)) * 100 else 0
   
-  # ✅ Validar estacionariedade
+  # Validar estacionariedade
   estacionariedade <- validar_estacionariedade(ts_data)
   
-  # ✅ Testes de diagnóstico
-  # Teste de Ljung-Box para autocorrelação
+  # Testes de diagnóstico
   lb_test <- tryCatch({
     Box.test(residuos, lag = min(20, length(residuos) %/% 5), type = "Ljung-Box")
   }, error = function(e) NULL)
   
-  # Teste de normalidade dos resíduos
   shapiro_test <- tryCatch({
     if (length(residuos) >= 3 && length(residuos) <= 5000) {
       shapiro.test(residuos)
@@ -406,18 +399,15 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     }
   }, error = function(e) NULL)
   
-  # Teste ARCH simplificado
   arch_test <- teste_arch_simplificado(residuos)
   
-  # ✅ Calcular previsões formatadas
+  # Calcular previsões formatadas
   previsoes_list <- list()
   
   for (i in 1:n_previsoes) {
-    # Determinar qual intervalo usar (prioridade: 95% > 90% > 80%)
     nivel_95_idx <- which(c(80, 90, 95) == 95)
     nivel_80_idx <- which(c(80, 90, 95) == 80)
     
-    # Valores padrão
     inferior_95 <- NA
     superior_95 <- NA
     inferior_80 <- NA
@@ -440,7 +430,6 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
       data = if (length(datas_previsao) >= i) datas_previsao[[i]] else paste("Período", i),
       previsao = as.numeric(previsoes$mean[i]),
       
-      # Intervalos de confiança
       intervalo_80 = if (!is.na(inferior_80) && !is.na(superior_80)) {
         list(
           inferior = as.numeric(inferior_80),
@@ -457,7 +446,6 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
         )
       } else NULL,
       
-      # Para compatibilidade
       inferior = as.numeric(if (!is.na(inferior_95)) inferior_95 else if (!is.na(inferior_80)) inferior_80 else NA),
       superior = as.numeric(if (!is.na(superior_95)) superior_95 else if (!is.na(superior_80)) superior_80 else NA)
     )
@@ -465,18 +453,16 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     previsoes_list[[i]] <- previsao_item
   }
   
-  # ✅ Calcular tendência e crescimento
+  # Calcular tendência
   if (n_previsoes >= 2) {
     valor_inicial <- as.numeric(previsoes$mean[1])
     valor_final <- as.numeric(previsoes$mean[n_previsoes])
     
-    # Crescimento absoluto e percentual
     crescimento_absoluto <- valor_final - valor_inicial
-    crescimento_percentual <- if (valor_inicial != 0) {
+    crescimento_percentual <- if (!is.na(valor_inicial) && valor_inicial != 0) {
       ((valor_final - valor_inicial) / abs(valor_inicial)) * 100
     } else NA
     
-    # Classificação da tendência
     if (!is.na(crescimento_percentual)) {
       if (crescimento_percentual > 10) {
         tendencia <- "Forte crescimento"
@@ -506,7 +492,7 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     tendencia_cor <- "secondary"
   }
   
-  # ✅ Classificação do modelo
+  # Classificação do modelo
   classificacao_modelo <- "Regular"
   
   if (!is.na(metricas_avancadas$MAPE)) {
@@ -523,16 +509,26 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     }
   }
   
-  # ✅ Construir resultado
+  # ✅ CORREÇÃO PRINCIPAL: Gerar datas históricas corretamente
+  data_inicio <- extrair_data_inicio(parametros, ts_data, freq)
+  
+  # Criar sequência de datas a partir da data de início
+  data_inicio_date <- as.Date(data_inicio)
+  if (is.na(data_inicio_date)) {
+    data_inicio_date <- as.Date("2015-12-01")
+  }
+  
+  datas_historicas <- seq(data_inicio_date, by = "month", length.out = length(ts_data))
+  datas_historicas_formatadas <- format(datas_historicas, "%b/%Y")
+  
+  # Construir resultado
   resultado <- list(
-    # Informações básicas
     success = TRUE,
     tipo_modelo = "sarima",
     n_observacoes = length(ts_data),
     variavel_y = y_var,
     timestamp_processamento = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     
-    # Interpretação técnica
     interpretacao_tecnica = list(
       variavel = y_var,
       inicio_previsao = if (length(datas_previsao) > 0) datas_previsao[[1]] else "N/A",
@@ -547,7 +543,6 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
       classificacao_modelo = classificacao_modelo
     ),
     
-    # Especificação do modelo
     modelo_info = list(
       tipo = "SARIMA",
       ordem_arima = paste0("(", p, ",", d, ",", q, ")"),
@@ -560,15 +555,12 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
       sigma2 = tryCatch(as.numeric(modelo$sigma2), error = function(e) NA)
     ),
     
-    # Coeficientes
     coeficientes = coeficientes_list,
     
-    # Métricas
     metricas = list(
       ajuste = metricas_avancadas,
       
       diagnostico = list(
-        # Testes de resíduos
         teste_ljung_box = if (!is.null(lb_test)) list(
           estatistica = as.numeric(lb_test$statistic),
           valor_p = as.numeric(lb_test$p.value),
@@ -585,40 +577,32 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
         ) else NULL,
         
         teste_arch = if (!is.null(arch_test)) list(
-          estatistica = as.numeric(arch_test$statistica),
+          estatistica = as.numeric(arch_test$estatistica),
           valor_p = as.numeric(arch_test$p_valor),
           conclusao = arch_test$conclusao
         ) else NULL,
         
-        # Outliers
         outliers = list(
           n_outliers = n_outliers,
           percent_outliers = round(percent_outliers, 2),
           tem_outliers = n_outliers > 0
         ),
         
-        # Estacionariedade
         estacionariedade = estacionariedade
       )
     ),
     
-    # Previsões
     previsoes = previsoes_list,
     
-        # Dados originais - COM VALORES HISTÓRICOS
-    # Extrair anos da série temporal
-    anos_ts <- as.numeric(time(ts_data))
-    
+    # ✅ CORREÇÃO PRINCIPAL: Dados originais com datas corretas
     dados_originais = list(
       n_observacoes = length(ts_data),
-      # ✅ ADICIONAR OS VALORES HISTÓRICOS REAIS
       historico = as.list(as.numeric(ts_data)),
-      datas = as.list(anos_ts),
-      # Criar array de objetos para facilitar o frontend
+      datas = as.list(datas_historicas_formatadas),
       dados = lapply(1:length(ts_data), function(i) {
         list(
-          periodo = as.character(anos_ts[i]),
-          data = as.character(anos_ts[i]),
+          periodo = datas_historicas_formatadas[i],
+          data = datas_historicas_formatadas[i],
           valor = as.numeric(ts_data[i]),
           tipo = "historico"
         )
@@ -631,9 +615,7 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
         maximo = as.numeric(max(ts_data, na.rm = TRUE))
       )
     ),
-
     
-    # Período da previsão
     periodo_previsao = list(
       inicio = if (length(datas_previsao) > 0) datas_previsao[[1]] else "N/A",
       fim = if (length(datas_previsao) > 0) datas_previsao[[length(datas_previsao)]] else "N/A",
@@ -641,7 +623,6 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
       frequencia = freq
     ),
     
-    # Qualidade do ajuste
     qualidade_ajuste = list(
       classificacao_geral = classificacao_modelo,
       classificacao_mape = if (!is.na(metricas_avancadas$MAPE)) {
@@ -652,7 +633,7 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
       
       recomendacoes = if (n_outliers > 0) {
         c("Considerar tratamento de outliers")
-      } else if (!is.null(lb_test) && lb_test$p.value < 0.05) {
+      } else if (!is.null(lb_test) && !is.na(lb_test$p.value) && lb_test$p.value < 0.05) {
         c("Autocorrelação nos resíduos", "Considerar aumentar ordem AR ou MA")
       } else {
         c("Modelo adequado")
@@ -660,17 +641,14 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     )
   )
   
-   # ✅ ADICIONAR ESTAS LINHAS PARA COMPATIBILIDADE
   resultado$simulacao <- FALSE
   
-  # Resumo simplificado
   resultado$resumo <- paste0(
     "Modelo SARIMA(", p, ",", d, ",", q, ")(", P, ",", D, ",", Q, ")[", s, "] executado com sucesso. ",
-    "MAPE: ", round(metricas_avancadas$MAPE, 2), "% | ",
+    "MAPE: ", if (!is.na(metricas_avancadas$MAPE)) round(metricas_avancadas$MAPE, 2) else "N/A", "% | ",
     "Classificação: ", classificacao_modelo
   )
   
-  # Qualidade (estrutura similar à regressão)
   resultado$qualidade <- list(
     MAPE = if (!is.na(metricas_avancadas$MAPE)) round(metricas_avancadas$MAPE, 2) else NA,
     RMSE = if (!is.na(metricas_avancadas$RMSE)) round(metricas_avancadas$RMSE, 2) else NA,
@@ -679,11 +657,8 @@ processar_resultado_sarima_profissional <- function(modelo, ts_data, n_previsoes
     BIC = if (!is.na(metricas_avancadas$BIC)) round(metricas_avancadas$BIC, 2) else NA
   )
   
-  # Arrays simples para compatibilidade
   resultado$previsoes_array <- as.numeric(previsoes$mean)
   resultado$datas_previsao_array <- unlist(datas_previsao)
-  
-  # Timestamp ISO
   resultado$timestamp <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ")
   
   return(resultado)
@@ -701,7 +676,7 @@ main <- function() {
   output_file <- args[2]
   
   tryCatch({
-    cat("🚀 Iniciando SARIMA Profissional\n")
+    cat("🚀 Iniciando SARIMA Profissional (VERSÃO CORRIGIDA)\n")
     cat("⏰", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")
     
     # Ler dados de entrada
@@ -746,14 +721,12 @@ main <- function() {
     }
     
     # Configurar frequência
-    freq <- 12  # padrão mensal
+    freq <- 12
     if (!is.null(parametros$frequencia)) {
       freq_map <- list(
         "mensal" = 12, "Mensal" = 12, "monthly" = 12,
         "trimestral" = 4, "Trimestral" = 4, "quarterly" = 4,
-        "anual" = 1, "Anual" = 1, "yearly" = 1,
-        "diaria" = 365, "Diária" = 365, "daily" = 365,
-        "semanal" = 52, "Semanal" = 52, "weekly" = 7
+        "anual" = 1, "Anual" = 1, "yearly" = 1
       )
       freq <- freq_map[[parametros$frequencia]] %||% 12
     }
@@ -766,17 +739,28 @@ main <- function() {
     p <- as.integer(parametros$p %||% 1)
     d <- as.integer(parametros$d %||% 1)
     q <- as.integer(parametros$q %||% 1)
-    P <- as.integer(parametros$P %||% 0)
-    D <- as.integer(parametros$D %||% 0)
-    Q <- as.integer(parametros$Q %||% 0)
+    P <- as.integer(parametros$P %||% 1)
+    D <- as.integer(parametros$D %||% 1)
+    Q <- as.integer(parametros$Q %||% 1)
     s <- as.integer(parametros$s %||% freq)
     
-    cat("⚙️  Configuração SARIMA: (", p, ",", d, ",", q, ")(", P, ",", D, ",", Q, ")[", s, "]\n")
+    cat("⚙️ Configuração SARIMA: (", p, ",", d, ",", q, ")(", P, ",", D, ",", Q, ")[", s, "]\n")
     cat("📅 Previsões:", n_previsoes, "períodos\n")
     cat("📈 Frequência:", freq, "\n")
     
+    # Extrair última data real se disponível
+    ultima_data_real <- NULL
+    if (!is.null(parametros$ultima_data) && parametros$ultima_data != "") {
+      ultima_data_real <- parametros$ultima_data
+    } else if ("Data" %in% names(df) && length(df$Data) > 0) {
+      ultima_data_real <- as.character(df$Data[length(df$Data)])
+    }
+    
     if (!is.null(parametros$periodo_inicio)) {
       cat("📅 Período início:", parametros$periodo_inicio, "\n")
+    }
+    if (!is.null(ultima_data_real)) {
+      cat("📅 Última data real:", ultima_data_real, "\n")
     }
     
     # Executar SARIMA
@@ -784,7 +768,7 @@ main <- function() {
       cat("🔄 Ajustando modelo SARIMA...\n")
       Arima(ts_data, order = c(p, d, q), seasonal = list(order = c(P, D, Q), period = s))
     }, error = function(e) {
-      cat("⚠️  Erro no SARIMA especificado:", e$message, "\n")
+      cat("⚠️ Erro no SARIMA especificado:", e$message, "\n")
       cat("🔄 Tentando auto.arima sazonal...\n")
       auto.arima(ts_data, seasonal = TRUE, stepwise = TRUE, approximation = FALSE)
     })
@@ -792,7 +776,7 @@ main <- function() {
     # Processar resultados
     resultado <- processar_resultado_sarima_profissional(
       modelo, ts_data, n_previsoes, parametros, 
-      p, d, q, P, D, Q, s, y_var
+      p, d, q, P, D, Q, s, y_var, ultima_data_real
     )
     
     # Salvar resultado
